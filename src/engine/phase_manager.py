@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # 合法的阶段转移表
 VALID_TRANSITIONS: dict[GamePhase, list[GamePhase]] = {
-    GamePhase.SETUP: [GamePhase.FIRST_NIGHT],
+    GamePhase.SETUP: [GamePhase.SETUP, GamePhase.FIRST_NIGHT],
     GamePhase.FIRST_NIGHT: [GamePhase.DAY_DISCUSSION],
     GamePhase.DAY_DISCUSSION: [GamePhase.NOMINATION, GamePhase.NIGHT, GamePhase.GAME_OVER],
     GamePhase.NOMINATION: [GamePhase.VOTING, GamePhase.NIGHT, GamePhase.DAY_DISCUSSION],

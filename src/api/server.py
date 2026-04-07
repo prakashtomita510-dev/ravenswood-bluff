@@ -32,7 +32,7 @@ from fastapi.responses import RedirectResponse
 
 from src.agents.human_agent import HumanAgent
 from src.orchestrator.game_loop import GameOrchestrator
-from src.state.game_state import GameState, PlayerState, Team
+from src.state.game_state import GameState, PlayerState, Team, GamePhase
 
 # Configure logging
 # Moved to top level
@@ -69,29 +69,22 @@ manager = ConnectionManager()
 async def lifespan(app: FastAPI):
     global global_orchestrator
     try:
-        from src.agents.ai_agent import AIAgent, Persona
         from src.llm.openai_backend import OpenAIBackend
         backend = OpenAIBackend()
         
+        # 初始状态只有一个待定玩家
         state = GameState(
+            phase=GamePhase.SETUP,
             players=(
-                PlayerState(player_id="h1", name="Human Player", role_id="imp", team=Team.EVIL),
-                PlayerState(player_id="a1", name="Bot Alice", role_id="washerwoman", team=Team.GOOD),
-                PlayerState(player_id="a2", name="Bot Bob", role_id="empath", team=Team.GOOD),
-                PlayerState(player_id="a3", name="Bot Charlie", role_id="poisoner", team=Team.EVIL),
+                PlayerState(player_id="h1", name="Host", role_id="washerwoman", team=Team.GOOD),
             )
         )
         global_orchestrator = GameOrchestrator(state)
         
-        a1_agent = AIAgent("a1", "Bot Alice", backend, Persona("普通的洗衣妇", "多嘴且热心"))
-        a2_agent = AIAgent("a2", "Bot Bob", backend, Persona("同情心泛滥的村民", "犹豫不决"))
-        a3_agent = AIAgent("a3", "Bot Charlie", backend, Persona("险恶的投毒者", "狡诈，喜欢带节奏"))
+        # 自动启动游戏循环任务
+        asyncio.create_task(run_game_loop_safe())
         
-        global_orchestrator.register_agent(a1_agent)
-        global_orchestrator.register_agent(a2_agent)
-        global_orchestrator.register_agent(a3_agent)
-        
-        logger.info("Global Orchestrator started with AI Agents.")
+        logger.info("Global Orchestrator started in SETUP phase.")
     except Exception as e:
         logger.error(f"Failed to startup: {e}", exc_info=True)
     yield
@@ -141,6 +134,21 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
     except WebSocketDisconnect:
         manager.disconnect(player_id)
 
+@app.post("/api/game/setup")
+async def setup_game(data: Dict[str, Any]):
+    if not global_orchestrator:
+        return {"status": "error", "message": "Orchestrator not initialized"}
+    
+    player_count = data.get("player_count", 5)
+    host_id = data.get("host_id", "h1")
+    
+    if player_count < 5 or player_count > 15:
+        return {"status": "error", "message": "Player count must be between 5 and 15"}
+
+    # 异步触发准备完成
+    asyncio.create_task(global_orchestrator.run_setup(player_count, host_id))
+    return {"status": "ok", "message": f"Game setup for {player_count} players started"}
+
 @app.post("/api/game/start")
 async def start_game():
     if not global_orchestrator:
@@ -149,28 +157,53 @@ async def start_game():
     return {"status": "ok", "message": "Game loop started"}
 
 @app.get("/api/game/state")
-async def get_game_state():
+async def get_game_state(player_id: str = None):
     if not global_orchestrator:
         return {"status": "error", "message": "Orchestrator not initialized"}
     state = global_orchestrator.state
     data = {
         "round_number": state.round_number,
+        "day_number": state.day_number,
         "phase": state.phase.value,
         "alive_count": state.alive_count,
         "current_nominee": state.current_nominee,
         "players": []
     }
     for p in state.players:
-        data["players"].append({
+        p_info = {
             "player_id": p.player_id,
             "name": p.name,
-            "role_id": p.role_id,
-            "team": p.team.value,
             "is_alive": p.is_alive,
-            "is_poisoned": p.is_poisoned,
-            "is_drunk": p.is_drunk,
-        })
+        }
+        # 仅在请求者是该玩家本人，或者是说书人(h1)时，返回角色信息
+        if player_id == p.player_id or player_id == "h1":
+            # 如果是该玩家本人且有虚假身份(如酒鬼)，则返回虚假身份供其展示
+            display_role = p.role_id
+            if player_id == p.player_id and p.fake_role:
+                display_role = p.fake_role
+                
+            p_info.update({
+                "role_id": display_role,
+                "team": p.team.value,
+                "fake_role": p.fake_role if player_id == "h1" else None, # 只有说书人能看到 fake_role 标记
+                "is_poisoned": p.is_poisoned,
+                "is_drunk": p.is_drunk,
+            })
+        
+        data["players"].append(p_info)
     return data
+
+@app.get("/api/game/grimoire")
+async def get_grimoire():
+    """获取说书人专用魔典信息"""
+    if not global_orchestrator:
+        return {"status": "error", "message": "Orchestrator not initialized"}
+    
+    grimoire = global_orchestrator.state.grimoire
+    if not grimoire:
+        return {"players": []}
+        
+    return grimoire.model_dump()
 
 if __name__ == "__main__":
     import uvicorn

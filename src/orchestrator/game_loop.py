@@ -17,7 +17,7 @@ from src.engine.victory_checker import VictoryChecker
 from src.orchestrator.event_bus import EventBus
 from src.orchestrator.information_broker import InformationBroker
 from src.state.event_log import EventLog
-from src.state.game_state import GameEvent, GamePhase, GameState, Visibility, Team
+from src.state.game_state import GameEvent, GamePhase, GameState, Visibility, Team, PlayerStatus, PlayerState
 from src.state.snapshot import SnapshotManager
 
 logger = logging.getLogger(__name__)
@@ -54,16 +54,89 @@ class GameOrchestrator:
         # 通过 Broker 路由事件视野
         await self.broker.broadcast_event(event, self.state)
 
+    async def run_setup(self, player_count: int, host_id: str):
+        """由外部(API)调用，完成准备并启动"""
+        if self.phase_manager.current_phase != GamePhase.SETUP:
+            return
+        
+        logger.info(f"开始配置游戏: {player_count} 人局")
+        from src.engine.scripts import SCRIPTS, distribute_roles
+        script = SCRIPTS["trouble_brewing"]
+        
+        # 1. 分配角色
+        role_ids = distribute_roles(script, player_count)
+        
+        # 2. 初始化玩家列表
+        new_players = []
+        # 保留已连接的人类玩家(虽然目前只有一个 h1)
+        human_p = self.state.get_player(host_id)
+        
+        for i in range(player_count):
+            p_id = f"p{i+1}"
+            role_id = role_ids[i]
+            
+            # 判断阵营
+            from src.engine.roles.base_role import get_role_class
+            from src.state.game_state import RoleType
+            cls = get_role_class(role_id)
+            team = cls.get_definition().team if cls else Team.GOOD
+            
+            p_name = f"Player {i+1}"
+            if p_id == host_id and human_p:
+                p_name = human_p.name
+                
+            # 处理酒鬼 (Drunken)
+            fake_role = None
+            is_drunk = False
+            if role_id == "drunken":
+                is_drunk = True
+                # 随机选一个不在场上的村民
+                import random
+                in_play = set(role_ids)
+                townsfolk_pool = [r for r in script.roles if get_role_class(r).get_definition().role_type == RoleType.TOWNSFOLK and r not in in_play]
+                fake_role = random.choice(townsfolk_pool) if townsfolk_pool else "washerwoman"
+            
+            new_players.append(PlayerState(
+                player_id=p_id,
+                name=p_name,
+                role_id=role_id,
+                team=team,
+                fake_role=fake_role,
+                statuses=(PlayerStatus.ALIVE, PlayerStatus.DRUNK) if is_drunk else (PlayerStatus.ALIVE,)
+            ))
+            
+        from src.state.game_state import GameConfig
+        self.state = self.state.with_update(
+            players=tuple(new_players),
+            config=GameConfig(player_count=player_count)
+        )
+        self._update_grimoire()
+        
+        # 3. 注册 AI 代理 (为非人类玩家)
+        from src.agents.ai_agent import AIAgent, Persona
+        from src.llm.openai_backend import OpenAIBackend
+        backend = OpenAIBackend()
+        
+        for p in self.state.players:
+            if p.player_id not in self.broker.agents:
+                # 随机生成个性
+                agent = AIAgent(p.player_id, p.name, backend, Persona("普通的村民", "比较安静观察"))
+                self.register_agent(agent)
+                
+        # 4. 标志准备完成，由 run_game_loop 继续
+        self._setup_done.set_result(True)
+
     async def run_game_loop(self) -> Team:
         """
         运行完整游戏主循环直到分出胜负
         """
+        self._setup_done = asyncio.get_running_loop().create_future()
         logger.info("=== 游戏开始 ===")
         # 保存初始快照
         self.snapshot_manager.take_snapshot(self.state)
 
-        # 进入第一夜
-        await self._transition_and_run(GamePhase.FIRST_NIGHT)
+        # 进入准备阶段
+        await self._transition_and_run(GamePhase.SETUP)
         
         while not self.winner:
             # 胜负判定
@@ -74,7 +147,11 @@ class GameOrchestrator:
                 
             current_phase = self.phase_manager.current_phase
             
-            if current_phase == GamePhase.FIRST_NIGHT or current_phase == GamePhase.NIGHT:
+            if current_phase == GamePhase.SETUP:
+                # 等待外部调用 run_setup
+                await self._setup_done
+                await self._transition_and_run(GamePhase.FIRST_NIGHT)
+            elif current_phase == GamePhase.FIRST_NIGHT or current_phase == GamePhase.NIGHT:
                 await self._transition_and_run(GamePhase.DAY_DISCUSSION)
             elif current_phase == GamePhase.DAY_DISCUSSION:
                 await self._transition_and_run(GamePhase.NOMINATION)
@@ -98,8 +175,14 @@ class GameOrchestrator:
         self.phase_manager.transition_to(target_phase)
         self.state = self.state.with_update(
             phase=target_phase,
-            round_number=self.phase_manager.round_number
+            round_number=self.phase_manager.round_number,
+            day_number=self.phase_manager.day_number
         )
+        
+        # 给玩家一点反应时间
+        import asyncio
+        if target_phase != GamePhase.SETUP:
+            await asyncio.sleep(2)
         
         # 宣布阶段变更 (公开事件)
         phase_event = GameEvent(
@@ -114,7 +197,9 @@ class GameOrchestrator:
         self.snapshot_manager.take_snapshot(self.state)
         
         # 执行具体阶段的协调逻辑
-        if target_phase == GamePhase.FIRST_NIGHT:
+        if target_phase == GamePhase.SETUP:
+            await self._run_setup_phase()
+        elif target_phase == GamePhase.FIRST_NIGHT:
             await self._run_first_night()
         elif target_phase == GamePhase.NIGHT:
             await self._run_night()
@@ -129,29 +214,78 @@ class GameOrchestrator:
 
     # --------------- 具体阶段逻辑 ---------------
     
+    async def _run_setup_phase(self) -> None:
+        """准备阶段：系统在此等待 Host 通过 API 调用 run_setup"""
+        logger.info("等说书人(h1)配置游戏人数...")
+        # 此时 UI 呈现遮罩层，后端 run_game_loop 在等待 _setup_done 这个 Future
+        pass
+
     async def _run_first_night(self) -> None:
-        """第一夜：发身份，邪恶阵营互相认识，无刀"""
-        # 发身份和给信息的逻辑
-        
-        # 在这里简化演示：找能发信息的角色（比如洗衣妇）发信息
+        """首夜逻辑：身份告知、邪恶阵营互相认识及首夜信息分发"""
+        logger.info("=== 第一夜开始 ===")
+        self._update_grimoire()
+
+        # 1. 邪恶阵营互相认识
+        evil_players = [p for p in self.state.players if p.team == Team.EVIL]
+        for ep in evil_players:
+            teammates = [p.name for p in evil_players if p.player_id != ep.player_id]
+            e = GameEvent(
+                event_type="evil_reveal",
+                phase=GamePhase.FIRST_NIGHT,
+                round_number=self.state.round_number,
+                target=ep.player_id,
+                visibility=Visibility.PRIVATE,
+                payload={"teammates": teammates}
+            )
+            await self.event_bus.publish(e)
+            self.state = self.state.with_event(e)
+
+        # 2. 分发初始信息 (洗衣妇、图书馆员等)
         await self._distribute_night_info()
+
+        # 3. 执行首夜特定行动
+        await self._execute_night_actions(GamePhase.FIRST_NIGHT)
+        
+        # 首夜结束后的 Grimoire 更新
+        self._update_grimoire()
+
+    def _update_grimoire(self) -> None:
+        """生成最新的魔典视图供说书人使用"""
+        from src.state.game_state import GrimoireInfo, PlayerGrimoireInfo
+        grimoire_players = []
+        for p in self.state.players:
+            grimoire_players.append(PlayerGrimoireInfo(
+                player_id=p.player_id,
+                name=p.name,
+                role_id=p.role_id,
+                fake_role=p.fake_role,
+                team=p.team,
+                is_alive=p.is_alive,
+                is_poisoned=p.is_poisoned,
+                is_drunk=p.is_drunk
+            ))
+        self.state = self.state.with_update(
+            grimoire=GrimoireInfo(players=tuple(grimoire_players))
+        )
 
     async def _run_night(self) -> None:
         """普通夜晚：技能释放"""
-        # 按夜晚行动顺序调用（需支持根据剧本排序）
-        # 这里简化：我们遍历所有存活且有行动技能的角色
+        logger.info(f"=== 第 {self.state.round_number} 夜开始 ===")
         
-        # 先发信息
+        # 1. 分发信息
         await self._distribute_night_info()
         
-        # 接收行动 (比如投毒，杀人)
-        # 获取按照 night_order 排序的玩家
+        # 2. 执行行动
+        await self._execute_night_actions(GamePhase.NIGHT)
+
+    async def _execute_night_actions(self, phase: GamePhase) -> None:
+        """执行当前相位的所有合法行动"""
         players_to_act = []
         for p in self.state.get_alive_players():
             role_cls = get_role_class(p.role_id)
             if role_cls:
                 role_inst = role_cls()
-                if role_inst.can_act_at_phase(self.state, GamePhase.NIGHT):
+                if role_inst.can_act_at_phase(self.state, phase):
                     players_to_act.append((p, role_inst))
         
         # 排序
@@ -160,22 +294,17 @@ class GameOrchestrator:
         for p, role_inst in players_to_act:
             if p.player_id in self.broker.agents:
                 agent = self.broker.agents[p.player_id]
-                logger.info(f"[夜晚] 请求玩家 {agent.name}({agent.player_id}) 执行行动: night_action")
+                logger.info(f"[{phase.value}] 请求玩家 {agent.name}({agent.player_id}) 执行行动: night_action")
                 try:
                     action = await agent.act(self.state, "night_action")
-                    logger.info(f"[夜晚] 玩家 {agent.name} 返回行动: {action}")
+                    logger.info(f"[{phase.value}] 玩家 {agent.name} 返回行动: {action}")
                 except Exception as e:
-                    logger.error(f"[夜晚] 玩家 {agent.player_id} 行动执行异常: {e}", exc_info=True)
+                    logger.error(f"[{phase.value}] 玩家 {agent.player_id} 行动执行异常: {e}", exc_info=True)
                     continue
                 
                 if action.get("action") == "night_action" and action.get("target"):
                     target = action["target"]
                     try:
-                        # 执行技能并更新状态
-                        new_state, events = role_inst.execute_ability(
-                            self.state, p, target=target
-                        )
-                        self.state = new_state
                         for e in events:
                             await self.event_bus.publish(e)
                             self.state = self.state.with_event(e)

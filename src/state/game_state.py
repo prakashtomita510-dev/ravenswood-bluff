@@ -122,6 +122,7 @@ class PlayerState(BaseModel):
     role_id: str                                # 角色ID
     team: Team                                  # 阵营
     is_alive: bool = True
+    fake_role: Optional[str] = None             # 虚假身份（用于酒鬼等显示给玩家的假身份）
     statuses: tuple[PlayerStatus, ...] = (PlayerStatus.ALIVE,)
     has_used_dead_vote: bool = False             # 死后是否已使用最后一票
     ghost_votes_remaining: int = 1              # 剩余亡魂投票数
@@ -222,6 +223,10 @@ class GameState(BaseModel):
     # 游戏结果
     winning_team: Optional[Team] = None
 
+    # 配置与魔典 (Phase 8 新增)
+    config: Optional[GameConfig] = None
+    grimoire: Optional[GrimoireInfo] = None
+
     def get_player(self, player_id: str) -> Optional[PlayerState]:
         """根据 player_id 获取玩家状态"""
         for player in self.players:
@@ -292,9 +297,31 @@ class ScriptConfig(BaseModel):
 class GameConfig(BaseModel):
     """游戏配置"""
     player_count: int
-    script: ScriptConfig
+    script_id: str = "trouble_brewing"
     human_player_ids: list[str] = Field(default_factory=list)  # 人类玩家ID
     storyteller_mode: str = "auto"   # "auto" 自动说书人 / "human" 人类说书人
     llm_model: str = "gpt-4o-mini"
     discussion_rounds: int = 3       # 每天讨论轮数
     turn_timeout: int = 300          # 人类玩家行动超时（秒）
+
+
+# ============================================================
+# 魔典信息 (说书人视角)
+# ============================================================
+
+class PlayerGrimoireInfo(BaseModel):
+    """魔典中的玩家明细"""
+    player_id: str
+    name: str
+    role_id: str
+    fake_role: Optional[str] = None
+    team: Team
+    is_alive: bool
+    is_poisoned: bool
+    is_drunk: bool
+
+
+class GrimoireInfo(BaseModel):
+    """魔典：全局真实状态汇总"""
+    players: tuple[PlayerGrimoireInfo, ...] = ()
+    night_actions: tuple[dict, ...] = ()  # 昨晚行动记录 (扩展预留)

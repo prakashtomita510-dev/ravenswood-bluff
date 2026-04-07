@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>鸦木布拉夫小镇 - 玩家终端</title>
+    <title>Ravenswood Bluff - Player Terminal</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=Noto+Sans+SC:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -13,6 +13,7 @@
             --surface: rgba(255, 255, 255, 0.05);
             --error: #cf6679;
             --text: #e0e0e0;
+            --accent: #ff0266;
         }
 
         body {
@@ -34,6 +35,7 @@
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid rgba(255,255,255,0.1);
+            z-index: 100;
         }
 
         h1 { margin: 0; font-size: 1.5rem; color: var(--primary); letter-spacing: 2px; }
@@ -44,7 +46,7 @@
             overflow: hidden;
         }
 
-        /* 侧边栏：玩家列表 */
+        /* Sidebar: Player List */
         .sidebar {
             width: 260px;
             background: rgba(255,255,255,0.02);
@@ -62,12 +64,14 @@
             background: var(--surface);
             border-radius: 10px;
             transition: transform 0.2s;
+            position: relative;
         }
 
         .player-item.dead { opacity: 0.5; text-decoration: line-through; border-left: 3px solid var(--error); }
         .player-item.alive { border-left: 3px solid var(--secondary); }
+        .player-role-tag { font-size: 0.75rem; color: var(--primary); margin-top: 4px; display: block; }
 
-        /* 主体：聊天日志 */
+        /* Main: Chat Logs */
         .chat-container {
             flex: 1;
             display: flex;
@@ -95,11 +99,11 @@
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        .system-msg { background: rgba(187, 134, 252, 0.1); border: 1px solid var(--primary); align-self: center; font-size: 0.9rem; color: var(--primary); }
+        .system-msg { background: rgba(187, 134, 252, 0.1); border: 1px solid var(--primary); align-self: center; font-size: 0.9rem; color: var(--primary); text-align: center; }
         .player-msg { background: var(--surface); align-self: flex-start; }
         .self-msg { background: rgba(3, 218, 198, 0.1); border: 1px solid var(--secondary); align-self: flex-end; }
 
-        /* 操作区域 */
+        /* Action Area */
         .action-area {
             height: 180px;
             background: rgba(0,0,0,0.4);
@@ -145,6 +149,46 @@
             text-transform: uppercase;
         }
 
+        /* Overlay (Setup & Grimoire) */
+        .overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(8px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal {
+            background: #1e1e1e;
+            padding: 40px;
+            border-radius: 20px;
+            border: 1px solid var(--primary);
+            width: 400px;
+            text-align: center;
+            box-shadow: 0 0 30px rgba(187, 134, 252, 0.2);
+        }
+
+        .modal-large { width: 800px; max-height: 80vh; overflow-y: auto; text-align: left; }
+
+        .grimoire-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .grimoire-card {
+            background: var(--surface);
+            padding: 15px;
+            border-radius: 12px;
+            border-left: 4px solid var(--primary);
+        }
+
+        .grimoire-card.evil { border-left-color: var(--error); }
+
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
     </style>
@@ -152,27 +196,27 @@
 <body>
     <header>
         <div>
-            <h1>RAVENSWOOD BLUFF</h1>
+            <h1 id="ui-title">RAVENSWOOD BLUFF</h1>
             <small id="status-text" style="color: grey;">Waiting for connection...</small>
         </div>
         <div style="display: flex; gap: 10px; align-items: center;">
+            <button id="grimoireBtn" onclick="toggleGrimoire()" style="background: var(--surface); color: var(--secondary); min-width: 60px; padding: 5px; display: none;">Grimoire</button>
+            <button id="langToggle" onclick="toggleLanguage()" style="background: var(--surface); color: white; min-width: 60px; padding: 5px;">CN/EN</button>
             <span id="current-phase-display" class="phase-indicator">SETUP</span>
-            <input type="text" id="playerId" value="h1" style="width: 60px; padding: 5px;">
-            <button id="connectBtn" onclick="connect()" style="min-width: 80px; padding: 5px;">Join</button>
+            <input type="text" id="playerId" value="h1" style="width: 40px; padding: 5px;">
+            <button id="connectBtn" onclick="connect()" style="min-width: 60px; padding: 5px;">Join</button>
         </div>
     </header>
 
     <main class="main-layout">
         <div class="sidebar">
-            <h3 style="margin-top: 0; color: var(--secondary);">Players</h3>
-            <div id="playerList">
-                <!-- Players will be injected here -->
-            </div>
+            <h3 id="ui-players-title" style="margin-top: 0; color: var(--secondary);">Players</h3>
+            <div id="playerList"></div>
         </div>
 
         <div class="chat-container">
             <div id="logBox">
-                <div class="msg-bubble system-msg">Please connect to the server to start.</div>
+                <div class="msg-bubble system-msg" id="ui-welcome">Please connect to the server to start.</div>
             </div>
         </div>
     </main>
@@ -182,21 +226,9 @@
             <label id="action-prompt" style="font-weight: 600; color: var(--secondary);">Panel</label>
             <div id="controls-container" style="display: flex; gap: 10px;">
                 <input type="text" id="actionInput" placeholder="Content..." style="flex: 1;">
-                
-                <select id="targetSelect" style="display: none;">
-                    <option value="">Select Target...</option>
-                </select>
-
-                <select id="voteSelect" style="display: none;">
-                    <option value="false">Against / Abstain</option>
-                    <option value="true">For / Execute</option>
-                </select>
-
-                <select id="toneSelect">
-                    <option value="calm">Calm</option>
-                    <option value="passionate">Passionate</option>
-                    <option value="accusatory">Accusatory</option>
-                </select>
+                <select id="targetSelect" style="display: none;"></select>
+                <select id="voteSelect" style="display: none;"></select>
+                <select id="toneSelect"></select>
             </div>
         </div>
         <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -205,22 +237,179 @@
         </div>
     </div>
 
+    <!-- Setup Overlay -->
+    <div id="setupOverlay" class="overlay">
+        <div class="modal">
+            <h2 id="ui-setup-title">Game Setup</h2>
+            <p id="ui-setup-desc">Select the number of players (5-15)</p>
+            <input type="number" id="playerCountInput" value="8" min="5" max="15" style="width: 100px; text-align: center; font-size: 1.5rem; margin-bottom: 20px;">
+            <br>
+            <button id="startGameBtn" onclick="submitSetup()" style="width: 100%;">Start Game</button>
+        </div>
+    </div>
+
+    <!-- Grimoire Overlay -->
+    <div id="grimoireOverlay" class="overlay" onclick="toggleGrimoire()">
+        <div class="modal modal-large" onclick="event.stopPropagation()">
+            <h2 id="ui-grimoire-title">Storyteller's Grimoire</h2>
+            <div id="grimoireContent" class="grimoire-grid"></div>
+            <button onclick="toggleGrimoire()" style="margin-top: 30px; width: 100%;">Close</button>
+        </div>
+    </div>
+
     <script>
         let ws = null;
         let pendingActionType = null;
         let players = [];
+        let currentLang = 'zh';
+        let currentUserId = 'h1';
+        let gameState = { phase: 'setup', day_number: 0 };
+
+        const translations = {
+            zh: {
+                title: "鸦木布拉夫小镇",
+                waiting: "等待连接...",
+                connected: "已连接",
+                players: "玩家列表",
+                welcome: "请连接服务器以开始游戏。",
+                panel: "操作面板",
+                select_target: "选择目标...",
+                vote_for: "赞成 / 处决",
+                vote_against: "反对 / 弃权",
+                end_discussion: "结束讨论",
+                submit_action: "提交行动",
+                content_placeholder: "输入内容...",
+                action_required: "需要行动: ",
+                phase_setup: "准备阶段",
+                phase_first_night: "首夜",
+                phase_day_discussion: "白天讨论",
+                phase_nomination: "提名阶段",
+                phase_voting: "投票阶段",
+                phase_execution: "处决结算",
+                phase_night: "夜晚阶段",
+                phase_game_over: "游戏结束",
+                day_prefix: "第 {n} 天",
+                setup_title: "游戏配置",
+                setup_desc: "请选择玩家总人数 (5-15)",
+                start_game: "开始游戏",
+                grimoire_title: "说书人魔典",
+                grimoire_btn: "我的魔典",
+                status_alive: "存活",
+                status_dead: "死亡",
+                status_poisoned: "中毒",
+                status_drunk: "醉酒",
+                transition: "--- 阶段切换: {phase} ({day}) ---",
+                alert_connected: "连接成功！玩家ID: ",
+                error_setup: "配置失败，请检查范围 (5-15)",
+                // 角色翻译
+                role_washerwoman: "洗衣妇", role_librarian: "图书馆员", role_investigator: "调查员", role_chef: "厨师", role_empath: "共情者",
+                role_fortune_teller: "占卜师", role_undertaker: "送葬者", role_monk: "僧侣", role_ravenkeeper: "守鸦人",
+                role_virgin: "圣女", role_slayer: "杀手", role_soldier: "士兵", role_mayor: "市长",
+                role_butler: "管家", role_drunken: "酒鬼", role_recluse: "隐士", role_saint: "圣徒",
+                role_poisoner: "投毒者", role_spy: "间谍", role_scarlet_woman: "绯红女郎", role_baron: "男爵",
+                role_imp: "小恶魔"
+            },
+            en: {
+                title: "Ravenswood Bluff",
+                waiting: "Waiting for connection...",
+                connected: "Connected",
+                players: "Players",
+                welcome: "Please connect to the server to start.",
+                panel: "Action Panel",
+                select_target: "Select Target...",
+                vote_for: "For / Execute",
+                vote_against: "Against / Abstain",
+                end_discussion: "End Discussion",
+                submit_action: "Submit Action",
+                content_placeholder: "Type something...",
+                action_required: "Action Required: ",
+                phase_setup: "SETUP",
+                phase_first_night: "FIRST NIGHT",
+                phase_day_discussion: "DISCUSSION",
+                phase_nomination: "NOMINATION",
+                phase_voting: "VOTING",
+                phase_execution: "EXECUTION",
+                phase_night: "NIGHT",
+                phase_game_over: "GAME OVER",
+                day_prefix: "Day {n}",
+                setup_title: "Game Setup",
+                setup_desc: "Select total players (5-15)",
+                start_game: "Start Game",
+                grimoire_title: "Grimoire",
+                grimoire_btn: "Grimoire",
+                status_alive: "ALIVE",
+                status_dead: "DEAD",
+                status_poisoned: "POISONED",
+                status_drunk: "DRUNK",
+                transition: "--- Phase: {phase} ({day}) ---",
+                alert_connected: "Connected as ",
+                error_setup: "Setup failed. Check range (5-15)",
+                // Roles
+                role_washerwoman: "Washerwoman", role_librarian: "Librarian", role_investigator: "Investigator", role_chef: "Chef", role_empath: "Empath",
+                role_fortune_teller: "Fortune Teller", role_undertaker: "Undertaker", role_monk: "Monk", role_ravenkeeper: "Ravenkeeper",
+                role_virgin: "Virgin", role_slayer: "Slayer", role_soldier: "Soldier", role_mayor: "Mayor",
+                role_butler: "Butler", role_drunken: "Drunken", role_recluse: "Recluse", role_saint: "Saint",
+                role_poisoner: "Poisoner", role_spy: "Spy", role_scarlet_woman: "Scarlet Woman", role_baron: "Baron",
+                role_imp: "Imp"
+            }
+        };
+
+        function t(key, params = {}) {
+            let text = translations[currentLang][key] || key;
+            for (const [k, v] of Object.entries(params)) {
+                text = text.replace(`{${k}}`, v);
+            }
+            return text;
+        }
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            updateUIStrings();
+        }
+
+        function updateUIStrings() {
+            document.getElementById('ui-title').textContent = t('title');
+            document.getElementById('ui-players-title').textContent = t('players');
+            document.getElementById('ui-welcome').textContent = t('welcome');
+            document.getElementById('action-prompt').textContent = t('panel');
+            document.getElementById('skipBtn').textContent = t('end_discussion');
+            document.getElementById('submitBtn').textContent = t('submit_action');
+            document.getElementById('actionInput').placeholder = t('content_placeholder');
+            document.getElementById('startGameBtn').textContent = t('start_game');
+            document.getElementById('ui-setup-title').textContent = t('setup_title');
+            document.getElementById('ui-setup-desc').textContent = t('setup_desc');
+            document.getElementById('ui-grimoire-title').textContent = t('grimoire_title');
+            document.getElementById('grimoireBtn').textContent = t('grimoire_btn');
+            
+            if (!ws) document.getElementById('status-text').textContent = t('waiting');
+            else document.getElementById('status-text').textContent = t('connected');
+
+            updatePlayerList(players);
+            updatePhaseDisplay();
+            updateSelectOptions();
+        }
+
+        function updateSelectOptions() {
+            const toneSelect = document.getElementById('toneSelect');
+            toneSelect.innerHTML = `
+                <option value="calm">${currentLang === 'zh' ? '冷静' : 'Calm'}</option>
+                <option value="passionate">${currentLang === 'zh' ? '慷慨激昂' : 'Passionate'}</option>
+                <option value="accusatory">${currentLang === 'zh' ? '指责' : 'Accusatory'}</option>
+            `;
+
+            const voteSelect = document.getElementById('voteSelect');
+            voteSelect.innerHTML = `
+                <option value="false">${t('vote_against')}</option>
+                <option value="true">${t('vote_for')}</option>
+            `;
+        }
 
         function logMessage(text, type = 'system', senderName = '') {
             const box = document.getElementById('logBox');
             const div = document.createElement('div');
             div.className = `msg-bubble ${type}-msg`;
-            
-            if (senderName) {
-                div.innerHTML = `<strong style="color: var(--primary)">${senderName}:</strong> ${text}`;
-            } else {
-                div.textContent = text;
-            }
-            
+            if (senderName) div.innerHTML = `<strong style="color: var(--primary)">${senderName}:</strong> ${text}`;
+            else div.textContent = text;
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
         }
@@ -231,15 +420,17 @@
             container.innerHTML = '';
             
             const targetSelect = document.getElementById('targetSelect');
-            targetSelect.innerHTML = '<option value="">Select Target...</option>';
+            targetSelect.innerHTML = `<option value="">${t('select_target')}</option>`;
 
             playerData.forEach(p => {
                 const div = document.createElement('div');
                 div.className = `player-item ${p.is_alive ? 'alive' : 'dead'}`;
-                div.innerHTML = `<span>${p.name}</span> <small>${p.is_alive ? 'ALIVE' : 'DEAD'}</small>`;
+                let statusText = p.is_alive ? t('status_alive') : t('status_dead');
+                let roleDisplayName = p.role_id ? t('role_' + p.role_id) : '';
+                div.innerHTML = `<div><span>${p.name}</span><br><small class="player-role-tag">${roleDisplayName}</small></div> <small>${statusText}</small>`;
                 container.appendChild(div);
 
-                if (p.is_alive && p.player_id !== document.getElementById('playerId').value) {
+                if (p.is_alive && p.player_id !== currentUserId) {
                     const opt = document.createElement('option');
                     opt.value = p.player_id;
                     opt.textContent = p.name;
@@ -248,25 +439,44 @@
             });
         }
 
+        function updatePhaseDisplay() {
+            const phaseKey = `phase_${gameState.phase}`;
+            const phaseName = t(phaseKey);
+            const dayText = t('day_prefix', { n: gameState.day_number });
+            document.getElementById('current-phase-display').textContent = `${phaseName} (${dayText})`;
+            
+            // Setup Overlay Logic
+            if (gameState.phase === 'setup' && currentUserId === 'h1' && ws) {
+                document.getElementById('setupOverlay').style.display = 'flex';
+            } else {
+                document.getElementById('setupOverlay').style.display = 'none';
+            }
+
+            // Grimoire Button
+            document.getElementById('grimoireBtn').style.display = (currentUserId === 'h1') ? 'block' : 'none';
+        }
+
         async function fetchGameState() {
             try {
-                const res = await fetch('http://localhost:8000/api/game/state');
+                const res = await fetch(`http://localhost:8000/api/game/state?player_id=${currentUserId}`);
                 const data = await res.json();
-                document.getElementById('current-phase-display').textContent = data.phase;
+                gameState = data;
+                updatePhaseDisplay();
                 updatePlayerList(data.players);
             } catch(e) {}
         }
 
         function connect() {
-            const pid = document.getElementById('playerId').value;
-            ws = new WebSocket(`ws://localhost:8000/ws/${pid}`);
+            currentUserId = document.getElementById('playerId').value;
+            ws = new WebSocket(`ws://localhost:8000/ws/${currentUserId}`);
             
             ws.onopen = () => {
-                logMessage(`Successfully connected as ${pid}`);
-                document.getElementById('status-text').textContent = "Connected";
+                logMessage(t('alert_connected') + currentUserId);
+                document.getElementById('status-text').textContent = t('connected');
                 document.getElementById('connectBtn').disabled = true;
                 setInterval(fetchGameState, 3000);
                 fetchGameState();
+                updateUIStrings();
             };
             
             ws.onmessage = (event) => {
@@ -276,9 +486,11 @@
                     if (e.event_type === 'player_speaks') {
                         logMessage(e.payload.content, 'player', e.actor);
                     } else if (e.event_type === 'phase_change') {
-                        logMessage(`--- Phase Transition: ${e.phase} ---`);
+                        const phaseName = t(`phase_${e.phase}`);
+                        const dayText = t('day_prefix', { n: e.payload.day_number || gameState.day_number });
+                        logMessage(t('transition', { phase: phaseName, day: dayText }));
                     } else {
-                        logMessage(`[Event] ${e.event_type}: ${JSON.stringify(e.payload)}`);
+                        logMessage(`[${e.event_type}] ${JSON.stringify(e.payload)}`);
                     }
                     fetchGameState();
                 } else if (data.type === 'action_request') {
@@ -287,12 +499,29 @@
             };
         }
 
+        async function submitSetup() {
+            const count = parseInt(document.getElementById('playerCountInput').value);
+            if (count < 5 || count > 15) {
+                alert(t('error_setup'));
+                return;
+            }
+            const res = await fetch('http://localhost:8000/api/game/setup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ player_count: count, host_id: currentUserId })
+            });
+            const result = await res.json();
+            if (result.status === 'ok') {
+                document.getElementById('setupOverlay').style.display = 'none';
+                logMessage("Game setup submitted. Starting...");
+            }
+        }
+
         function handleActionRequest(type, context) {
             pendingActionType = type;
-            document.getElementById('action-prompt').textContent = `Action Required: ${type.replace('_', ' ').toUpperCase()}`;
+            document.getElementById('action-prompt').textContent = t('action_required') + type.toUpperCase();
             document.getElementById('submitBtn').disabled = false;
             
-            // UI Toggles
             document.getElementById('actionInput').style.display = (type === 'speak') ? 'block' : 'none';
             document.getElementById('toneSelect').style.display = (type === 'speak') ? 'block' : 'none';
             document.getElementById('targetSelect').style.display = (type === 'night_action' || type === 'nominate') ? 'block' : 'none';
@@ -302,9 +531,7 @@
 
         function skipDiscussion() {
             if (!ws) return;
-            const msg = { type: "action_response", payload: { action: "skip_discussion" } };
-            ws.send(JSON.stringify(msg));
-            logMessage("Requesting to end discussion...", "self");
+            ws.send(JSON.stringify({ type: "action_response", payload: { action: "skip_discussion" } }));
             clearActionState();
         }
 
@@ -318,18 +545,64 @@
             } else if (pendingActionType === 'vote') {
                 payload.decision = document.getElementById('voteSelect').value === 'true';
             }
-
             ws.send(JSON.stringify({ type: "action_response", payload }));
-            logMessage(`Action submitted: ${pendingActionType}`, 'self');
             clearActionState();
         }
 
         function clearActionState() {
-            document.getElementById('action-prompt').textContent = "Waiting for game engine...";
+            document.getElementById('action-prompt').textContent = t('panel');
             document.getElementById('submitBtn').disabled = true;
             document.getElementById('skipBtn').style.display = 'none';
             pendingActionType = null;
         }
+
+        function toggleGrimoire() {
+            const overlay = document.getElementById('grimoireOverlay');
+            if (overlay.style.display === 'flex') {
+                overlay.style.display = 'none';
+            } else {
+                renderGrimoire();
+                overlay.style.display = 'flex';
+            }
+        }
+
+        async function renderGrimoire() {
+            const content = document.getElementById('grimoireContent');
+            content.innerHTML = '<p>Loading...</p>';
+            
+            try {
+                const res = await fetch('http://localhost:8000/api/game/grimoire');
+                const data = await res.json();
+                const grimoirePlayers = data.players || [];
+                
+                content.innerHTML = '';
+                grimoirePlayers.forEach(p => {
+                    const card = document.createElement('div');
+                    card.className = `grimoire-card ${p.team === 'evil' ? 'evil' : 'good'}`;
+                    let statusTags = [];
+                    if (p.is_poisoned) statusTags.push(`<span style="color: var(--accent)">[${t('status_poisoned')}]</span>`);
+                    if (p.is_drunk) statusTags.push(`<span style="color: var(--secondary)">[${t('status_drunk')}]</span>`);
+                    
+                    const roleName = t('role_' + p.role_id);
+                    const fakeRoleName = p.fake_role ? t('role_' + p.fake_role) : null;
+                    
+                    card.innerHTML = `
+                        <strong>${p.name}</strong> (${p.player_id})<br>
+                        <span style="color: var(--primary)">${roleName}</span><br>
+                        <small>${p.team.toUpperCase()}</small><br>
+                        ${statusTags.join(' ')}<br>
+                        <small>${p.is_alive ? t('status_alive') : t('status_dead')}</small>
+                        ${p.fake_role ? `<br><small style="color: #888">Fake: ${fakeRoleName}</small>` : ''}
+                    `;
+                    content.appendChild(card);
+                });
+            } catch (e) {
+                content.innerHTML = '<p style="color: var(--error)">Failed to load Grimoire</p>';
+            }
+        }
+
+        // Init
+        updateUIStrings();
     </script>
 </body>
 </html>
