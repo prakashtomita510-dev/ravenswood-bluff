@@ -167,3 +167,36 @@ class EmpathRole(BaseRole):
             "type": "empath_info",
             "evil_count": evil_count
         }
+
+
+@register_role("undertaker")
+class UndertakerRole(BaseRole):
+    """送葬者: 每个夜晚*，得知今天白天被处决的玩家角色"""
+
+    @staticmethod
+    def get_definition() -> RoleDefinition:
+        return RoleDefinition(
+            role_id="undertaker",
+            name="送葬者",
+            name_en="Undertaker",
+            team=Team.GOOD,
+            role_type=RoleType.TOWNSFOLK,
+            ability=Ability(
+                trigger=AbilityTrigger.EACH_NIGHT,
+                action_type=AbilityType.INFO_GATHER,
+                description="得知今天白天被处决的玩家角色",
+                night_order=52,
+            ),
+        )
+
+    def execute_ability(
+        self, game_state: GameState, actor: PlayerState, target: Optional[str] = None, **kwargs: Any
+    ) -> tuple[GameState, list[GameEvent]]:
+        return game_state, []
+
+    def get_night_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
+        if actor.is_drunk() or actor.is_poisoned():
+            return {"type": "undertaker_info", "role_seen": "drunk_fake_role"}
+            
+        # Simplified: Check if anyone died by execution today.
+        return {"type": "undertaker_info", "role_seen": "unknown_due_to_simple_impl"}
