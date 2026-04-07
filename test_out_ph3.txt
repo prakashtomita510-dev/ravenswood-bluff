@@ -1,0 +1,32 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.2, pluggy-1.6.0 -- D:\鸦木布拉夫小镇\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\鸦木布拉夫小镇
+configfile: pyproject.toml
+plugins: anyio-4.13.0, asyncio-1.3.0, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 13 items
+
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_subscribe_and_publish PASSED [  7%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_wildcard_subscription PASSED [ 15%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_multiple_handlers PASSED [ 23%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_priority_ordering PASSED [ 30%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_unsubscribe PASSED [ 38%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_event_history PASSED [ 46%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_handler_error_doesnt_crash PASSED [ 53%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_handler_count PASSED [ 61%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_clear PASSED [ 69%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_repr PASSED [ 76%]
+tests/test_orchestrator/test_game_loop.py::test_game_orchestrator_initialization PASSED [ 84%]
+tests/test_orchestrator/test_game_loop.py::test_game_loop_auto_execute_until_end FAILED [ 92%]
+tests/test_orchestrator/test_information_broker.py::test_information_broker_visibility PASSED [100%]
+
+================================== FAILURES ===================================
+____________________ test_game_loop_auto_execute_until_end ____________________
+tests\test_orchestrator\test_game_loop.py:87: in test_game_loop_auto_execute_until_end
+    assert orch.snapshot_manager.count() > 0
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: 'int' object is not callable
+=========================== short test summary info ===========================
+FAILED tests/test_orchestrator/test_game_loop.py::test_game_loop_auto_execute_until_end
+======================== 1 failed, 12 passed in 0.35s =========================
