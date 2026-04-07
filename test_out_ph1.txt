@@ -1,0 +1,110 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.2, pluggy-1.6.0 -- D:\鸦木布拉夫小镇\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\鸦木布拉夫小镇
+configfile: pyproject.toml
+plugins: anyio-4.13.0, asyncio-1.3.0, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 72 items
+
+tests/test_engine/test_nomination_rules.py::TestRuleEngine::test_can_nominate_wrong_phase PASSED [  1%]
+tests/test_engine/test_nomination_rules.py::TestRuleEngine::test_can_nominate_dead_nominator PASSED [  2%]
+tests/test_engine/test_nomination_rules.py::TestRuleEngine::test_can_nominate_already_nominated_today PASSED [  4%]
+tests/test_engine/test_nomination_rules.py::TestRuleEngine::test_can_nominate_success PASSED [  5%]
+tests/test_engine/test_nomination_rules.py::TestRuleEngine::test_can_vote PASSED [  6%]
+tests/test_engine/test_nomination_rules.py::TestNominationManager::test_nominate_success PASSED [  8%]
+tests/test_engine/test_nomination_rules.py::TestNominationManager::test_nominate_fail PASSED [  9%]
+tests/test_engine/test_nomination_rules.py::TestNominationManager::test_cast_vote PASSED [ 11%]
+tests/test_engine/test_nomination_rules.py::TestNominationManager::test_resolve_voting_passed PASSED [ 12%]
+tests/test_engine/test_phase_manager.py::TestPhaseManager::test_initial_state PASSED [ 13%]
+tests/test_engine/test_phase_manager.py::TestPhaseManager::test_valid_transitions PASSED [ 15%]
+tests/test_engine/test_phase_manager.py::TestPhaseManager::test_invalid_transitions PASSED [ 16%]
+tests/test_engine/test_phase_manager.py::TestPhaseManager::test_reset PASSED [ 18%]
+tests/test_engine/test_phase_manager.py::TestPhaseManager::test_phase_history FAILED [ 19%]
+tests/test_engine/test_roles_victory.py::TestVictoryChecker::test_no_winner_yet PASSED [ 20%]
+tests/test_engine/test_roles_victory.py::TestVictoryChecker::test_good_wins_demon_dead PASSED [ 22%]
+tests/test_engine/test_roles_victory.py::TestVictoryChecker::test_evil_wins_two_alive PASSED [ 23%]
+tests/test_engine/test_roles_victory.py::TestRoles::test_role_registration PASSED [ 25%]
+tests/test_engine/test_roles_victory.py::TestRoles::test_washerwoman PASSED [ 26%]
+tests/test_engine/test_roles_victory.py::TestRoles::test_imp_kill PASSED [ 27%]
+tests/test_engine/test_roles_victory.py::TestRoles::test_imp_suicide_transfer PASSED [ 29%]
+tests/test_engine/test_roles_victory.py::TestRoles::test_poisoner FAILED [ 30%]
+tests/test_llm/test_base_backend.py::TestLLMModels::test_message_creation PASSED [ 31%]
+tests/test_llm/test_base_backend.py::TestLLMModels::test_tool_def PASSED [ 33%]
+tests/test_llm/test_base_backend.py::TestLLMModels::test_tool_call PASSED [ 34%]
+tests/test_llm/test_base_backend.py::TestLLMModels::test_llm_response PASSED [ 36%]
+tests/test_llm/test_base_backend.py::TestMockBackend::test_generate PASSED [ 37%]
+tests/test_llm/test_base_backend.py::TestMockBackend::test_records_inputs PASSED [ 38%]
+tests/test_llm/test_base_backend.py::TestMockBackend::test_get_model_name PASSED [ 40%]
+tests/test_llm/test_base_backend.py::TestMockBackend::test_repr PASSED   [ 41%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_subscribe_and_publish PASSED [ 43%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_wildcard_subscription PASSED [ 44%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_multiple_handlers PASSED [ 45%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_priority_ordering PASSED [ 47%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_unsubscribe PASSED [ 48%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_event_history PASSED [ 50%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_handler_error_doesnt_crash PASSED [ 51%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_handler_count PASSED [ 52%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_clear PASSED [ 54%]
+tests/test_orchestrator/test_event_bus.py::TestEventBus::test_repr PASSED [ 55%]
+tests/test_state/test_event_log.py::TestEventLog::test_append_and_len PASSED [ 56%]
+tests/test_state/test_event_log.py::TestEventLog::test_events_immutable_copy PASSED [ 58%]
+tests/test_state/test_event_log.py::TestEventLog::test_get_public_events PASSED [ 59%]
+tests/test_state/test_event_log.py::TestEventLog::test_get_private_events PASSED [ 61%]
+tests/test_state/test_event_log.py::TestEventLog::test_get_events_by_type PASSED [ 62%]
+tests/test_state/test_event_log.py::TestEventLog::test_get_events_in_round PASSED [ 63%]
+tests/test_state/test_event_log.py::TestEventLog::test_repr PASSED       [ 65%]
+tests/test_state/test_game_state.py::TestPlayerState::test_create_player PASSED [ 66%]
+tests/test_state/test_game_state.py::TestPlayerState::test_player_immutability PASSED [ 68%]
+tests/test_state/test_game_state.py::TestPlayerState::test_with_update PASSED [ 69%]
+tests/test_state/test_game_state.py::TestPlayerState::test_is_poisoned PASSED [ 70%]
+tests/test_state/test_game_state.py::TestPlayerState::test_dead_vote PASSED [ 72%]
+tests/test_state/test_game_state.py::TestGameState::test_create_game_state PASSED [ 73%]
+tests/test_state/test_game_state.py::TestGameState::test_immutability PASSED [ 75%]
+tests/test_state/test_game_state.py::TestGameState::test_get_player PASSED [ 76%]
+tests/test_state/test_game_state.py::TestGameState::test_get_player_by_name PASSED [ 77%]
+tests/test_state/test_game_state.py::TestGameState::test_get_player_not_found PASSED [ 79%]
+tests/test_state/test_game_state.py::TestGameState::test_with_update PASSED [ 80%]
+tests/test_state/test_game_state.py::TestGameState::test_with_player_update PASSED [ 81%]
+tests/test_state/test_game_state.py::TestGameState::test_with_event PASSED [ 83%]
+tests/test_state/test_game_state.py::TestGameState::test_with_message PASSED [ 84%]
+tests/test_state/test_game_state.py::TestGameState::test_alive_players PASSED [ 86%]
+tests/test_state/test_game_state.py::TestGameEvent::test_create_event PASSED [ 87%]
+tests/test_state/test_game_state.py::TestGameEvent::test_public_event PASSED [ 88%]
+tests/test_state/test_game_state.py::TestRoleDefinition::test_create_role PASSED [ 90%]
+tests/test_state/test_game_state.py::TestGameConfig::test_create_config PASSED [ 91%]
+tests/test_state/test_snapshot.py::TestSnapshotManager::test_take_snapshot PASSED [ 93%]
+tests/test_state/test_snapshot.py::TestSnapshotManager::test_get_snapshot PASSED [ 94%]
+tests/test_state/test_snapshot.py::TestSnapshotManager::test_get_latest PASSED [ 95%]
+tests/test_state/test_snapshot.py::TestSnapshotManager::test_count PASSED [ 97%]
+tests/test_state/test_snapshot.py::TestSnapshotManager::test_export_to_json PASSED [ 98%]
+tests/test_state/test_snapshot.py::TestSnapshotManager::test_repr PASSED [100%]
+
+================================== FAILURES ===================================
+_____________________ TestPhaseManager.test_phase_history _____________________
+tests\test_engine\test_phase_manager.py:69: in test_phase_history
+    assert history[0] == (GamePhase.FIRST_NIGHT, 1, 0)
+E   AssertionError: assert (<GamePhase.F...night'>, 0, 0) == (<GamePhase.F...night'>, 1, 0)
+E     
+E     At index 1 diff: 0 != 1
+E     
+E     Full diff:
+E       (
+E           <GamePhase.FIRST_NIGHT: 'first_night'>,
+E     -     1,...
+E     
+E     ...Full output truncated (5 lines hidden), use '-vv' to show
+___________________________ TestRoles.test_poisoner ___________________________
+tests\test_engine\test_roles_victory.py:125: in test_poisoner
+    new_state, events = role.execute_ability(state, state.get_player("p"), "target")
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\engine\roles\minions.py:71: in execute_ability
+    phase=GameState.phase,  # type: ignore (just placeholder technically we use game_state.phase usually)
+          ^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\pydantic\_internal\_model_construction.py:289: in __getattr__
+    raise AttributeError(item)
+E   AttributeError: phase
+=========================== short test summary info ===========================
+FAILED tests/test_engine/test_phase_manager.py::TestPhaseManager::test_phase_history
+FAILED tests/test_engine/test_roles_victory.py::TestRoles::test_poisoner - At...
+======================== 2 failed, 70 passed in 0.35s =========================
