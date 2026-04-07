@@ -38,7 +38,9 @@ from src.state.game_state import GameState, PlayerState, Team, GamePhase
 # Moved to top level
 
 # Global variables
+from src.agents.storyteller_agent import StorytellerAgent
 global_orchestrator: GameOrchestrator | None = None
+global_storyteller: StorytellerAgent | None = None
 human_agents: Dict[str, HumanAgent] = {}
 
 class ConnectionManager:
@@ -71,6 +73,7 @@ async def lifespan(app: FastAPI):
     try:
         from src.llm.openai_backend import OpenAIBackend
         backend = OpenAIBackend()
+        global_storyteller = StorytellerAgent(backend)
         
         # 初始状态只有一个待定玩家
         state = GameState(
@@ -80,6 +83,7 @@ async def lifespan(app: FastAPI):
             )
         )
         global_orchestrator = GameOrchestrator(state)
+        global_orchestrator.storyteller_agent = global_storyteller
         
         # 自动启动游戏循环任务
         asyncio.create_task(run_game_loop_safe())
@@ -121,7 +125,8 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
         agent = HumanAgent(
             player_id=player_id, 
             name=f"Human_{player_id}", 
-            send_message_callback=lambda msg: manager.send_personal_message(msg, player_id)
+            send_message_callback=lambda msg: manager.send_personal_message(msg, player_id),
+            chat_callback=global_orchestrator.handle_chat if global_orchestrator else None
         )
         human_agents[player_id] = agent
         if global_orchestrator:
@@ -141,12 +146,13 @@ async def setup_game(data: Dict[str, Any]):
     
     player_count = data.get("player_count", 5)
     host_id = data.get("host_id", "h1")
+    is_human = data.get("is_human_participant", True)
     
     if player_count < 5 or player_count > 15:
         return {"status": "error", "message": "Player count must be between 5 and 15"}
 
     # 异步触发准备完成
-    asyncio.create_task(global_orchestrator.run_setup(player_count, host_id))
+    asyncio.create_task(global_orchestrator.run_setup(player_count, host_id, is_human))
     return {"status": "ok", "message": f"Game setup for {player_count} players started"}
 
 @app.post("/api/game/start")
@@ -161,12 +167,15 @@ async def get_game_state(player_id: str = None):
     if not global_orchestrator:
         return {"status": "error", "message": "Orchestrator not initialized"}
     state = global_orchestrator.state
+    is_observer = player_id not in state.config.human_player_ids if state.config else False
+    
     data = {
         "round_number": state.round_number,
         "day_number": state.day_number,
         "phase": state.phase.value,
         "alive_count": state.alive_count,
         "current_nominee": state.current_nominee,
+        "is_observer": is_observer,
         "players": []
     }
     for p in state.players:
@@ -175,17 +184,24 @@ async def get_game_state(player_id: str = None):
             "name": p.name,
             "is_alive": p.is_alive,
         }
-        # 仅在请求者是该玩家本人，或者是说书人(h1)时，返回角色信息
-        if player_id == p.player_id or player_id == "h1":
+        # 仅在请求者是该玩家本人时，返回角色信息
+        if player_id == p.player_id:
             # 如果是该玩家本人且有虚假身份(如酒鬼)，则返回虚假身份供其展示
             display_role = p.role_id
-            if player_id == p.player_id and p.fake_role:
+            if p.fake_role:
                 display_role = p.fake_role
                 
             p_info.update({
                 "role_id": display_role,
                 "team": p.team.value,
-                "fake_role": p.fake_role if player_id == "h1" else None, # 只有说书人能看到 fake_role 标记
+                "is_poisoned": p.is_poisoned,
+                "is_drunk": p.is_drunk,
+            })
+        
+        # 说书人(h1)可以额外看到一些状态标记，但角色身份建议只在 Grimoire 中查看
+        if player_id == "h1":
+             p_info.update({
+                "fake_role": p.fake_role,
                 "is_poisoned": p.is_poisoned,
                 "is_drunk": p.is_drunk,
             })

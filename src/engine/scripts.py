@@ -51,8 +51,8 @@ def get_role_counts(player_count: int) -> dict:
         "demon": counts[3]
     }
 
-def distribute_roles(script: ScriptConfig, player_count: int) -> list[str]:
-    """随机分配角色 ID"""
+def distribute_roles(script: ScriptConfig, player_count: int) -> tuple[list[str], list[str]]:
+    """随机分配角色 ID，返回 (已选角色, 邪恶方伪装角色)"""
     import random
     counts = get_role_counts(player_count)
     
@@ -89,4 +89,10 @@ def distribute_roles(script: ScriptConfig, player_count: int) -> list[str]:
     selected.extend(random.sample(pools[RoleType.TOWNSFOLK], min(counts["townsfolk"], len(pools[RoleType.TOWNSFOLK]))))
     
     random.shuffle(selected)
-    return selected
+    
+    # 抽取 3 个不在场上的村民/外来者角色作为恶魔的伪装 (Bluffs)
+    in_play = set(selected)
+    bluff_candidates = [r for r in script.roles if get_role_class(r).get_definition().role_type in (RoleType.TOWNSFOLK, RoleType.OUTSIDER) and r not in in_play]
+    bluffs = random.sample(bluff_candidates, min(3, len(bluff_candidates)))
+    
+    return selected, bluffs

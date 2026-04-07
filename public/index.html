@@ -187,7 +187,8 @@
             border-left: 4px solid var(--primary);
         }
 
-        .grimoire-card.evil { border-left-color: var(--error); }
+        .grimoire-card.evil { border-left-color: var(--error); background: rgba(207, 102, 121, 0.05); }
+        .grimoire-card.good { border-left-color: var(--secondary); background: rgba(3, 218, 198, 0.05); }
 
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
@@ -224,8 +225,11 @@
     <div class="action-area">
         <div class="input-group">
             <label id="action-prompt" style="font-weight: 600; color: var(--secondary);">Panel</label>
-            <div id="controls-container" style="display: flex; gap: 10px;">
+            <div id="controls-container" style="display: flex; gap: 10px; align-items: center;">
                 <input type="text" id="actionInput" placeholder="Content..." style="flex: 1;">
+                <label id="evilChatToggleLabel" style="display: none; align-items: center; gap: 5px; cursor: pointer; color: var(--error);">
+                    <input type="checkbox" id="evilChatCheck"> <span id="ui-evil-chat-label">Evil Team</span>
+                </label>
                 <select id="targetSelect" style="display: none;"></select>
                 <select id="voteSelect" style="display: none;"></select>
                 <select id="toneSelect"></select>
@@ -234,6 +238,7 @@
         <div style="display: flex; flex-direction: column; gap: 10px;">
             <button id="skipBtn" onclick="skipDiscussion()" style="background: var(--surface); color: white; display: none;">End Discussion</button>
             <button id="submitBtn" onclick="sendAction()" disabled>Submit Action</button>
+            <button id="chatBtn" onclick="sendQuickChat()" style="background: var(--surface); color: var(--secondary);">Chat</button>
         </div>
     </div>
 
@@ -243,7 +248,10 @@
             <h2 id="ui-setup-title">Game Setup</h2>
             <p id="ui-setup-desc">Select the number of players (5-15)</p>
             <input type="number" id="playerCountInput" value="8" min="5" max="15" style="width: 100px; text-align: center; font-size: 1.5rem; margin-bottom: 20px;">
-            <br>
+            <div style="margin-bottom: 20px; display: flex; justify-content: center; gap: 20px;">
+                <label><input type="radio" name="playMode" value="participate" checked> <span id="ui-mode-play">Participate</span></label>
+                <label><input type="radio" name="playMode" value="observe"> <span id="ui-mode-observe">Observe</span></label>
+            </div>
             <button id="startGameBtn" onclick="submitSetup()" style="width: 100%;">Start Game</button>
         </div>
     </div>
@@ -263,7 +271,7 @@
         let players = [];
         let currentLang = 'zh';
         let currentUserId = 'h1';
-        let gameState = { phase: 'setup', day_number: 0 };
+        let gameState = { phase: 'setup', day_number: 0, is_observer: false };
 
         const translations = {
             zh: {
@@ -301,6 +309,11 @@
                 transition: "--- 阶段切换: {phase} ({day}) ---",
                 alert_connected: "连接成功！玩家ID: ",
                 error_setup: "配置失败，请检查范围 (5-15)",
+                mode_play: "参与游戏",
+                mode_observe: "旁观模式",
+                evil_chat: "【邪恶频道】",
+                evil_chat_label: "邪恶频道",
+                chat_btn: "发送消息",
                 // 角色翻译
                 role_washerwoman: "洗衣妇", role_librarian: "图书馆员", role_investigator: "调查员", role_chef: "厨师", role_empath: "共情者",
                 role_fortune_teller: "占卜师", role_undertaker: "送葬者", role_monk: "僧侣", role_ravenkeeper: "守鸦人",
@@ -344,6 +357,11 @@
                 transition: "--- Phase: {phase} ({day}) ---",
                 alert_connected: "Connected as ",
                 error_setup: "Setup failed. Check range (5-15)",
+                mode_play: "Participate",
+                mode_observe: "Observe",
+                evil_chat: "[Evil Channel]",
+                evil_chat_label: "Evil Chat",
+                chat_btn: "Chat",
                 // Roles
                 role_washerwoman: "Washerwoman", role_librarian: "Librarian", role_investigator: "Investigator", role_chef: "Chef", role_empath: "Empath",
                 role_fortune_teller: "Fortune Teller", role_undertaker: "Undertaker", role_monk: "Monk", role_ravenkeeper: "Ravenkeeper",
@@ -374,12 +392,16 @@
             document.getElementById('action-prompt').textContent = t('panel');
             document.getElementById('skipBtn').textContent = t('end_discussion');
             document.getElementById('submitBtn').textContent = t('submit_action');
+            document.getElementById('chatBtn').textContent = t('chat_btn');
             document.getElementById('actionInput').placeholder = t('content_placeholder');
             document.getElementById('startGameBtn').textContent = t('start_game');
             document.getElementById('ui-setup-title').textContent = t('setup_title');
             document.getElementById('ui-setup-desc').textContent = t('setup_desc');
             document.getElementById('ui-grimoire-title').textContent = t('grimoire_title');
             document.getElementById('grimoireBtn').textContent = t('grimoire_btn');
+            document.getElementById('ui-mode-play').textContent = t('mode_play');
+            document.getElementById('ui-mode-observe').textContent = t('mode_observe');
+            document.getElementById('ui-evil-chat-label').textContent = t('evil_chat_label');
             
             if (!ws) document.getElementById('status-text').textContent = t('waiting');
             else document.getElementById('status-text').textContent = t('connected');
@@ -422,11 +444,19 @@
             const targetSelect = document.getElementById('targetSelect');
             targetSelect.innerHTML = `<option value="">${t('select_target')}</option>`;
 
+            let selfPlayer = playerData.find(p => p.player_id === currentUserId);
+            if (selfPlayer && selfPlayer.team === 'evil') {
+                document.getElementById('evilChatToggleLabel').style.display = 'flex';
+            } else {
+                document.getElementById('evilChatToggleLabel').style.display = 'none';
+            }
+
             playerData.forEach(p => {
                 const div = document.createElement('div');
                 div.className = `player-item ${p.is_alive ? 'alive' : 'dead'}`;
                 let statusText = p.is_alive ? t('status_alive') : t('status_dead');
-                let roleDisplayName = p.role_id ? t('role_' + p.role_id) : '';
+                let roleId = p.role_id;
+                let roleDisplayName = roleId ? t('role_' + roleId) : '';
                 div.innerHTML = `<div><span>${p.name}</span><br><small class="player-role-tag">${roleDisplayName}</small></div> <small>${statusText}</small>`;
                 container.appendChild(div);
 
@@ -454,6 +484,15 @@
 
             // Grimoire Button
             document.getElementById('grimoireBtn').style.display = (currentUserId === 'h1') ? 'block' : 'none';
+            
+            // Observer Logic
+            if (gameState.is_observer) {
+                document.querySelector('.action-area').style.opacity = '0.3';
+                document.querySelector('.action-area').style.pointerEvents = 'none';
+            } else {
+                document.querySelector('.action-area').style.opacity = '1';
+                document.querySelector('.action-area').style.pointerEvents = 'auto';
+            }
         }
 
         async function fetchGameState() {
@@ -468,7 +507,7 @@
 
         function connect() {
             currentUserId = document.getElementById('playerId').value;
-            ws = new WebSocket(`ws://localhost:8000/ws/${currentUserId}`);
+            ws = new WebSocket(`ws://${window.location.hostname}:8000/ws/${currentUserId}`);
             
             ws.onopen = () => {
                 logMessage(t('alert_connected') + currentUserId);
@@ -484,13 +523,14 @@
                 if (data.type === 'event_update') {
                     const e = data.event;
                     if (e.event_type === 'player_speaks') {
-                        logMessage(e.payload.content, 'player', e.actor);
+                        let prefix = e.payload.is_private ? `<span style="color:var(--error)">${t('evil_chat')}</span> ` : '';
+                        logMessage(prefix + e.payload.content, 'player', e.actor);
                     } else if (e.event_type === 'phase_change') {
                         const phaseName = t(`phase_${e.phase}`);
                         const dayText = t('day_prefix', { n: e.payload.day_number || gameState.day_number });
                         logMessage(t('transition', { phase: phaseName, day: dayText }));
                     } else {
-                        logMessage(`[${e.event_type}] ${JSON.stringify(e.payload)}`);
+                        // logMessage(`[${e.event_type}] ${JSON.stringify(e.payload)}`);
                     }
                     fetchGameState();
                 } else if (data.type === 'action_request') {
@@ -505,10 +545,15 @@
                 alert(t('error_setup'));
                 return;
             }
+            const isHuman = document.querySelector('input[name="playMode"]:checked').value === 'participate';
             const res = await fetch('http://localhost:8000/api/game/setup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ player_count: count, host_id: currentUserId })
+                body: JSON.stringify({ 
+                    player_count: count, 
+                    host_id: currentUserId,
+                    is_human_participant: isHuman
+                })
             });
             const result = await res.json();
             if (result.status === 'ok') {
@@ -527,6 +572,18 @@
             document.getElementById('targetSelect').style.display = (type === 'night_action' || type === 'nominate') ? 'block' : 'none';
             document.getElementById('voteSelect').style.display = (type === 'vote') ? 'block' : 'none';
             document.getElementById('skipBtn').style.display = (type === 'speak') ? 'block' : 'none';
+        }
+
+        function sendQuickChat() {
+            const content = document.getElementById('actionInput').value;
+            if (!content || !ws) return;
+            const isPrivate = document.getElementById('evilChatCheck').checked;
+            ws.send(JSON.stringify({
+                type: "chat",
+                content: content,
+                is_private: isPrivate
+            }));
+            document.getElementById('actionInput').value = '';
         }
 
         function skipDiscussion() {
@@ -554,6 +611,7 @@
             document.getElementById('submitBtn').disabled = true;
             document.getElementById('skipBtn').style.display = 'none';
             pendingActionType = null;
+            document.getElementById('actionInput').value = '';
         }
 
         function toggleGrimoire() {
@@ -583,7 +641,7 @@
                     if (p.is_poisoned) statusTags.push(`<span style="color: var(--accent)">[${t('status_poisoned')}]</span>`);
                     if (p.is_drunk) statusTags.push(`<span style="color: var(--secondary)">[${t('status_drunk')}]</span>`);
                     
-                    const roleName = t('role_' + p.role_id);
+                    const roleName = t('role_' + p.role_id) || p.role_id;
                     const fakeRoleName = p.fake_role ? t('role_' + p.fake_role) : null;
                     
                     card.innerHTML = `

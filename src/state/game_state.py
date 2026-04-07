@@ -184,6 +184,7 @@ class ChatMessage(BaseModel):
     round_number: int
     tone: str = "neutral"      # calm / passionate / accusatory / defensive
     target_player: Optional[str] = None  # 主要针对的玩家
+    recipient_ids: Optional[tuple[str, ...]] = None # 私聊对象 (空则全公开)
 
 
 # ============================================================
@@ -223,9 +224,10 @@ class GameState(BaseModel):
     # 游戏结果
     winning_team: Optional[Team] = None
 
-    # 配置与魔典 (Phase 8 新增)
+    # 配置与魔典 (Phase 8/9 扩展)
     config: Optional[GameConfig] = None
     grimoire: Optional[GrimoireInfo] = None
+    bluffs: tuple[str, ...] = ()             # 给恶魔的伪装角色 (3个)
 
     def get_player(self, player_id: str) -> Optional[PlayerState]:
         """根据 player_id 获取玩家状态"""
@@ -299,6 +301,7 @@ class GameConfig(BaseModel):
     player_count: int
     script_id: str = "trouble_brewing"
     human_player_ids: list[str] = Field(default_factory=list)  # 人类玩家ID
+    is_human_participant: bool = True     # 人类是否参与游戏 (True: 玩家, False: 旁观)
     storyteller_mode: str = "auto"   # "auto" 自动说书人 / "human" 人类说书人
     llm_model: str = "gpt-4o-mini"
     discussion_rounds: int = 3       # 每天讨论轮数

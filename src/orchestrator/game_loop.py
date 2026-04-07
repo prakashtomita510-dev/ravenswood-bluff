@@ -17,7 +17,7 @@ from src.engine.victory_checker import VictoryChecker
 from src.orchestrator.event_bus import EventBus
 from src.orchestrator.information_broker import InformationBroker
 from src.state.event_log import EventLog
-from src.state.game_state import GameEvent, GamePhase, GameState, Visibility, Team, PlayerStatus, PlayerState
+from src.state.game_state import GameEvent, GamePhase, GameState, Visibility, Team, PlayerStatus, PlayerState, ChatMessage
 from src.state.snapshot import SnapshotManager
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,7 @@ class GameOrchestrator:
         self.event_log = EventLog()
         self.snapshot_manager = SnapshotManager()
         self.broker = InformationBroker()
+        self.storyteller_agent = None
         
         # 记录每回合的获胜队伍
         self.winner: Team | None = None
@@ -54,7 +55,7 @@ class GameOrchestrator:
         # 通过 Broker 路由事件视野
         await self.broker.broadcast_event(event, self.state)
 
-    async def run_setup(self, player_count: int, host_id: str):
+    async def run_setup(self, player_count: int, host_id: str, is_human: bool = True):
         """由外部(API)调用，完成准备并启动"""
         if self.phase_manager.current_phase != GamePhase.SETUP:
             return
@@ -64,16 +65,25 @@ class GameOrchestrator:
         script = SCRIPTS["trouble_brewing"]
         
         # 1. 分配角色
-        role_ids = distribute_roles(script, player_count)
+        role_ids, bluffs = distribute_roles(script, player_count)
         
-        # 2. 初始化玩家列表
+        # 2. 初始化玩家列表与座次随机化
+        import random
+        # 确定人类玩家是否参与
+        human_id = host_id
+        
+        roles_to_assign = list(role_ids)
         new_players = []
-        # 保留已连接的人类玩家(虽然目前只有一个 h1)
-        human_p = self.state.get_player(host_id)
+        
+        # 随机决定人类玩家在哪个位置 (1到player_count)
+        human_seat_index = random.randint(0, player_count - 1) if is_human else -1
         
         for i in range(player_count):
             p_id = f"p{i+1}"
-            role_id = role_ids[i]
+            
+            # 如果是人类对应的位置，分配给人类
+            actual_player_id = human_id if i == human_seat_index else p_id
+            role_id = roles_to_assign.pop(0)
             
             # 判断阵营
             from src.engine.roles.base_role import get_role_class
@@ -82,22 +92,25 @@ class GameOrchestrator:
             team = cls.get_definition().team if cls else Team.GOOD
             
             p_name = f"Player {i+1}"
-            if p_id == host_id and human_p:
-                p_name = human_p.name
+            if actual_player_id == human_id:
+                p_name = "Human Player" # 或者从状态获取
                 
             # 处理酒鬼 (Drunken)
             fake_role = None
             is_drunk = False
             if role_id == "drunken":
                 is_drunk = True
-                # 随机选一个不在场上的村民
-                import random
-                in_play = set(role_ids)
-                townsfolk_pool = [r for r in script.roles if get_role_class(r).get_definition().role_type == RoleType.TOWNSFOLK and r not in in_play]
-                fake_role = random.choice(townsfolk_pool) if townsfolk_pool else "washerwoman"
+                if self.storyteller_agent:
+                    # 使用说书人代理决策假身份
+                    fake_role = await self.storyteller_agent.decide_drunk_role(script, role_ids)
+                else:
+                    # Fallback
+                    in_play = set(role_ids)
+                    townsfolk_pool = [r for r in script.roles if get_role_class(r).get_definition().role_type == RoleType.TOWNSFOLK and r not in in_play]
+                    fake_role = random.choice(townsfolk_pool) if townsfolk_pool else "washerwoman"
             
             new_players.append(PlayerState(
-                player_id=p_id,
+                player_id=actual_player_id,
                 name=p_name,
                 role_id=role_id,
                 team=team,
@@ -108,7 +121,8 @@ class GameOrchestrator:
         from src.state.game_state import GameConfig
         self.state = self.state.with_update(
             players=tuple(new_players),
-            config=GameConfig(player_count=player_count)
+            config=GameConfig(player_count=player_count, human_player_ids=[human_id] if is_human else []),
+            bluffs=tuple(bluffs)
         )
         self._update_grimoire()
         
@@ -184,7 +198,7 @@ class GameOrchestrator:
         if target_phase != GamePhase.SETUP:
             await asyncio.sleep(2)
         
-        # 宣布阶段变更 (公开事件)
+        # 3. 产生并记录阶段事件
         phase_event = GameEvent(
             event_type="phase_change",
             phase=target_phase,
@@ -192,7 +206,25 @@ class GameOrchestrator:
             visibility=Visibility.PUBLIC,
             payload={"day_number": self.phase_manager.day_number}
         )
-        await self.event_bus.publish(phase_event)
+        
+        # 说书人叙事
+        if self.storyteller_agent:
+            narration = await self.storyteller_agent.narrate_phase(self.state)
+            if narration:
+                msg = ChatMessage(
+                    speaker="storyteller",
+                    content=narration,
+                    phase=target_phase,
+                    round_number=self.phase_manager.round_number
+                )
+                self.state = self.state.with_message(msg)
+                await self.event_bus.publish(GameEvent(
+                    event_type="storyteller_narrate",
+                    phase=target_phase,
+                    round_number=self.phase_manager.round_number,
+                    payload={"content": narration}
+                ))
+
         self.state = self.state.with_event(phase_event)
         self.snapshot_manager.take_snapshot(self.state)
         
@@ -235,7 +267,7 @@ class GameOrchestrator:
                 round_number=self.state.round_number,
                 target=ep.player_id,
                 visibility=Visibility.PRIVATE,
-                payload={"teammates": teammates}
+                payload={"teammates": teammates, "bluffs": self.state.bluffs if ep.role_id == "imp" else []}
             )
             await self.event_bus.publish(e)
             self.state = self.state.with_event(e)
@@ -305,6 +337,8 @@ class GameOrchestrator:
                 if action.get("action") == "night_action" and action.get("target"):
                     target = action["target"]
                     try:
+                        new_state, events = role_inst.execute_ability(self.state, p, target=target)
+                        self.state = new_state
                         for e in events:
                             await self.event_bus.publish(e)
                             self.state = self.state.with_event(e)
@@ -316,7 +350,15 @@ class GameOrchestrator:
         for p in self.state.get_alive_players():
             role_cls = get_role_class(p.role_id)
             if role_cls:
-                info = role_cls().get_night_info(self.state, p)
+                # 优先尝试从说书人代理获取决策信息
+                info = {}
+                if self.storyteller_agent:
+                    info = await self.storyteller_agent.decide_night_info(self.state, p.player_id, p.role_id)
+                
+                # 如果说书人没给（或没说书人），则调用角色默认逻辑
+                if not info:
+                    info = role_cls().get_night_info(self.state, p)
+                
                 if info:
                     e = GameEvent(
                         event_type="night_info",
@@ -386,6 +428,39 @@ class GameOrchestrator:
             await asyncio.sleep(0.5)
 
         print(">>> [白天讨论] 讨论环节结束")
+
+    async def handle_chat(self, sender_id: str, content: str, is_private: bool = False) -> None:
+        """处理玩家发送的消息并广播"""
+        sender = self.state.get_player(sender_id)
+        if not sender: return
+        
+        recipient_ids = None
+        if is_private and sender.team == Team.EVIL:
+            # 邪恶阵营频道：发给所有坏人
+            recipient_ids = tuple(p.player_id for p in self.state.players if p.team == Team.EVIL)
+            visibility = Visibility.TEAM_EVIL
+        else:
+            visibility = Visibility.PUBLIC
+
+        msg = ChatMessage(
+            speaker=sender_id,
+            content=content,
+            phase=self.phase_manager.current_phase,
+            round_number=self.phase_manager.round_number,
+            recipient_ids=recipient_ids
+        )
+        self.state = self.state.with_message(msg)
+        
+        # 通过事件分发给对应的 Agent
+        e = GameEvent(
+            event_type="player_speaks",
+            phase=self.phase_manager.current_phase,
+            round_number=self.phase_manager.round_number,
+            actor=sender_id,
+            visibility=visibility,
+            payload={"content": content, "is_private": is_private}
+        )
+        await self._on_any_event(e)
 
     async def _run_nomination_phase(self) -> None:
         """提名环节。由于这里没人干预，我们可以让Agent轮流决定是否提名"""

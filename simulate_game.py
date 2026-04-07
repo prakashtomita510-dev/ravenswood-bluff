@@ -33,8 +33,12 @@ async def run_simulation():
         PlayerState(player_id="a4", name="David", role_id="poisoner", team=Team.EVIL),
     )
     
-    state = GameState(players=players)
+    state = GameState(players=players, phase=GamePhase.SETUP)
     orchestrator = GameOrchestrator(state)
+    
+    # 初始化说书人
+    from src.agents.storyteller_agent import StorytellerAgent
+    orchestrator.storyteller_agent = StorytellerAgent(backend)
     
     # 3. 注册代理
     agents = [
@@ -49,7 +53,13 @@ async def run_simulation():
     
     print(">>> 代理注册完毕，准备启动主循环...")
     
-    # 4. 运行游戏主循环
+    # 4. 模拟外部触发 SETUP
+    print(">>> 模拟说书人初始化对局...")
+    # 这里我们直接手动设置 _setup_done，因为 players 已经手动定义了
+    orchestrator._setup_done = asyncio.get_running_loop().create_future()
+    orchestrator._setup_done.set_result(True)
+    
+    # 5. 运行游戏主循环
     try:
         winner = await orchestrator.run_game_loop()
         print(f"\n=== [对局结束] 胜方: {winner.value} ===")

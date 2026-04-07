@@ -25,15 +25,17 @@ class HumanAgent(BaseAgent):
     使用 asyncio.Queue 或是回调机制异步等待前端传来的操作结果。
     """
 
-    def __init__(self, player_id: str, name: str, send_message_callback: Callable):
+    def __init__(self, player_id: str, name: str, send_message_callback: Callable, chat_callback: Optional[Callable] = None):
         """
         Args:
             player_id: 玩家唯一标识
             name: 玩家昵称
             send_message_callback: 用于向前端发送消息的异步回调函数 `async def cb(msg_str)`
+            chat_callback: 处理玩家主动发送消息的回调 `async def cb(sender_id, content, is_private)`
         """
         super().__init__(player_id, name)
         self.send_message = send_message_callback
+        self.chat_callback = chat_callback
         # 等待前端消息的队列。为了避免串联多个动作，每次 act() 会消耗一个指令
         self.pending_actions: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
@@ -81,6 +83,11 @@ class HumanAgent(BaseAgent):
             if msg_type == "action_response":
                 payload = data.get("payload", {})
                 await self.pending_actions.put(payload)
+            elif msg_type == "chat" and self.chat_callback:
+                content = data.get("content")
+                is_private = data.get("is_private", False)
+                if content:
+                    await self.chat_callback(self.player_id, content, is_private)
             else:
                 logger.warning(f"未知客户端消息类型: {msg_type}")
         except json.JSONDecodeError:
