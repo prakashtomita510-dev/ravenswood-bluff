@@ -91,6 +91,27 @@ class BaseRole(ABC):
         """
         ...
 
+    def can_act_at_phase(self, game_state: GameState, phase: GamePhase) -> bool:
+        """
+        检查角色在当前阶段是否应该行动
+        """
+        definition = self.get_definition()
+        if not definition.ability:
+            return False
+        
+        trigger = definition.ability.trigger
+        
+        if phase == GamePhase.FIRST_NIGHT:
+            return trigger in (AbilityTrigger.FIRST_NIGHT, AbilityTrigger.EACH_NIGHT)
+        
+        if phase == GamePhase.NIGHT:
+            # 除第一夜外的夜晚
+            if game_state.round_number > 1:
+                return trigger in (AbilityTrigger.EACH_NIGHT, AbilityTrigger.EACH_NIGHT_EXCEPT_FIRST)
+            return trigger == AbilityTrigger.EACH_NIGHT
+            
+        return False
+
     def get_night_info(
         self,
         game_state: GameState,

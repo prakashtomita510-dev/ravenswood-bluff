@@ -137,6 +137,10 @@ class PlayerState(BaseModel):
         return PlayerStatus.POISONED in self.statuses or PlayerStatus.DRUNK in self.statuses
 
     @property
+    def is_drunk(self) -> bool:
+        return PlayerStatus.DRUNK in self.statuses
+
+    @property
     def can_vote(self) -> bool:
         """是否能投票"""
         if self.is_alive:
@@ -213,6 +217,7 @@ class GameState(BaseModel):
     current_nominator: Optional[str] = None     # 当前提名者
     votes_today: dict = Field(default_factory=dict)   # 今天的投票记录
     nominations_today: tuple[str, ...] = ()     # 今天已提名过的玩家
+    nominees_today: tuple[str, ...] = ()        # 今天已被提名过的玩家
 
     # 游戏结果
     winning_team: Optional[Team] = None

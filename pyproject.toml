@@ -12,7 +12,8 @@ dependencies = [
     "structlog>=23.0",
     "fastapi>=0.100.0",
     "uvicorn[standard]",
-    "websockets"
+    "websockets",
+    "python-dotenv"
 ]
 
 [project.optional-dependencies]

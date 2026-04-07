@@ -34,9 +34,14 @@ class OpenAIBackend(LLMBackend):
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
     ) -> None:
-        self._model = model
-        self._api_key = api_key
-        self._base_url = base_url
+        import os
+        from dotenv import load_dotenv
+        
+        load_dotenv() # Load variables from .env if present
+        
+        self._model = os.getenv("DEFAULT_MODEL") or model
+        self._api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self._base_url = base_url or os.getenv("OPENAI_BASE_URL")
         self._client = None
 
     def _get_client(self):
@@ -100,10 +105,12 @@ class OpenAIBackend(LLMBackend):
             ]
 
         # 调用 API
+        logger.info(f"Sending LLM request to {self._model} (base_url: {self._base_url})")
         try:
-            response = await client.chat.completions.create(**kwargs)
+            response = await client.chat.completions.create(**kwargs, timeout=30.0)
+            logger.info("Received LLM response successfully.")
         except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
+            logger.error(f"OpenAI API error: {type(e).__name__}: {e}")
             raise
 
         # 解析响应

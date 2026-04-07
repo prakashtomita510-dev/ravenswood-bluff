@@ -18,8 +18,8 @@ VALID_TRANSITIONS: dict[GamePhase, list[GamePhase]] = {
     GamePhase.SETUP: [GamePhase.FIRST_NIGHT],
     GamePhase.FIRST_NIGHT: [GamePhase.DAY_DISCUSSION],
     GamePhase.DAY_DISCUSSION: [GamePhase.NOMINATION, GamePhase.NIGHT, GamePhase.GAME_OVER],
-    GamePhase.NOMINATION: [GamePhase.VOTING, GamePhase.DAY_DISCUSSION],
-    GamePhase.VOTING: [GamePhase.EXECUTION, GamePhase.DAY_DISCUSSION, GamePhase.NOMINATION],
+    GamePhase.NOMINATION: [GamePhase.VOTING, GamePhase.NIGHT, GamePhase.DAY_DISCUSSION],
+    GamePhase.VOTING: [GamePhase.EXECUTION, GamePhase.NOMINATION, GamePhase.NIGHT, GamePhase.DAY_DISCUSSION],
     GamePhase.EXECUTION: [GamePhase.NIGHT, GamePhase.DAY_DISCUSSION, GamePhase.GAME_OVER],
     GamePhase.NIGHT: [GamePhase.DAY_DISCUSSION, GamePhase.GAME_OVER],
     GamePhase.GAME_OVER: [],  # 终态
@@ -62,27 +62,54 @@ class PhaseManager:
     def phase_history(self) -> list[tuple[GamePhase, int, int]]:
         return list(self._phase_history)
 
-    def can_transition_to(self, target: GamePhase) -> bool:
+    def can_transition_to(self, target: GamePhase | str) -> bool:
         """检查是否可以转移到目标阶段"""
-        valid_targets = VALID_TRANSITIONS.get(self._current_phase, [])
+        # 强制转为 Enum 比较
+        if isinstance(target, str):
+            try:
+                target = GamePhase(target)
+            except ValueError:
+                return False
+        
+        # 确保当前阶段也是 Enum
+        current = self._current_phase
+        if isinstance(current, str):
+            current = GamePhase(current)
+
+        valid_targets = VALID_TRANSITIONS.get(current, [])
+        # DEBUG PRINTS
+        # print(f"DEBUG: Checking {current} -> {target}. Valid: {valid_targets}")
+        # for v in valid_targets:
+        #     if v == target: print(f"DEBUG: Found match! {v} == {target}")
+        
         return target in valid_targets
 
     def get_valid_transitions(self) -> list[GamePhase]:
         """获取当前阶段可以转移到的所有合法阶段"""
-        return list(VALID_TRANSITIONS.get(self._current_phase, []))
+        current = self._current_phase
+        if isinstance(current, str):
+            current = GamePhase(current)
+        return list(VALID_TRANSITIONS.get(current, []))
 
-    def transition_to(self, target: GamePhase) -> None:
+    def transition_to(self, target: GamePhase | str) -> None:
         """
         执行阶段转移
 
         Raises:
             ValueError: 如果转移不合法
         """
+        # 统一转为 Enum 成员
+        if isinstance(target, str):
+            try:
+                target = GamePhase(target)
+            except ValueError:
+                raise ValueError(f"无效的阶段名称: {target}")
+
         if not self.can_transition_to(target):
             valid = self.get_valid_transitions()
             raise ValueError(
-                f"非法阶段转移: {self._current_phase.value} -> {target.value}. "
-                f"合法目标: {[p.value for p in valid]}"
+                f"非法阶段转移: {self._current_phase} -> {target}. "
+                f"允许的后续阶段为: {[p.value for p in valid]}"
             )
 
         old_phase = self._current_phase

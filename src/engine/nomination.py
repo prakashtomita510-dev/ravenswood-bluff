@@ -34,15 +34,13 @@ class NominationManager:
 
         # 记录今天已经被提名和发起提名的人
         new_nominations_today = tuple(list(game_state.nominations_today) + [nominator_id])
+        new_nominees_today = tuple(list(game_state.nominees_today) + [nominee_id])
         
-        # 为了记录被提名的人，扩展 GameState (如果需要)
-        # 这里使用 setattr 或者我们在 GameState 中添加字段
-        # 暂用 existing fields
         new_state = game_state.with_update(
-            phase=GamePhase.VOTING,
             current_nominator=nominator_id,
             current_nominee=nominee_id,
             nominations_today=new_nominations_today,
+            nominees_today=new_nominees_today,
             votes_today={},  # 清空本次投票记录
         )
         
@@ -137,9 +135,8 @@ class NominationManager:
                         has_used_dead_vote=True
                     )
 
-        # 结束投票回到提名或白天阶段
+        # 结束投票回到白天讨论阶段 (主要由 Orchestrator 的状态机控制切换)
         new_state = new_state.with_update(
-            phase=GamePhase.DAY_DISCUSSION, # 官方规则回到讨论可以继续提名
             current_nominator=None,
             current_nominee=None,
         )

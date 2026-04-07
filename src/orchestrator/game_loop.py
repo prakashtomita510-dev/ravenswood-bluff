@@ -94,6 +94,7 @@ class GameOrchestrator:
 
     async def _transition_and_run(self, target_phase: GamePhase) -> None:
         """转变阶段并运行该阶段的主逻辑"""
+        print(f"\n>>> [系统] 转变阶段至: {target_phase.value} (第 {self.phase_manager.round_number} 轮)")
         self.phase_manager.transition_to(target_phase)
         self.state = self.state.with_update(
             phase=target_phase,
@@ -144,20 +145,32 @@ class GameOrchestrator:
         await self._distribute_night_info()
         
         # 接收行动 (比如投毒，杀人)
-        # 这里应该以严格的行动顺序(night_order)请求
+        # 获取按照 night_order 排序的玩家
+        players_to_act = []
         for p in self.state.get_alive_players():
             role_cls = get_role_class(p.role_id)
-            if not role_cls: continue
-            
-            # 在真实逻辑中，我们会请求 Agent 行动
+            if role_cls:
+                role_inst = role_cls()
+                if role_inst.can_act_at_phase(self.state, GamePhase.NIGHT):
+                    players_to_act.append((p, role_inst))
+        
+        # 排序
+        players_to_act.sort(key=lambda x: x[1].get_definition().ability.night_order if x[1].get_definition().ability else 99)
+
+        for p, role_inst in players_to_act:
             if p.player_id in self.broker.agents:
                 agent = self.broker.agents[p.player_id]
-                action = await agent.act(self.state, "night_action")
+                logger.info(f"[夜晚] 请求玩家 {agent.name}({agent.player_id}) 执行行动: night_action")
+                try:
+                    action = await agent.act(self.state, "night_action")
+                    logger.info(f"[夜晚] 玩家 {agent.name} 返回行动: {action}")
+                except Exception as e:
+                    logger.error(f"[夜晚] 玩家 {agent.player_id} 行动执行异常: {e}", exc_info=True)
+                    continue
                 
                 if action.get("action") == "night_action" and action.get("target"):
                     target = action["target"]
                     try:
-                        role_inst = role_cls()
                         # 执行技能并更新状态
                         new_state, events = role_inst.execute_ability(
                             self.state, p, target=target
@@ -167,7 +180,7 @@ class GameOrchestrator:
                             await self.event_bus.publish(e)
                             self.state = self.state.with_event(e)
                     except Exception as e:
-                        logger.warning(f"夜晚行动失败: {e}")
+                        logger.warning(f"夜晚行动效果结算失败: {e}")
 
     async def _distribute_night_info(self) -> None:
         """给需要获取信息的角色分发信息事件"""
@@ -188,32 +201,72 @@ class GameOrchestrator:
                     self.state = self.state.with_event(e)
 
     async def _run_day_discussion(self) -> None:
-        """白天自由讨论环节"""
-        # 让每个存活玩家或者死人进行发言
-        # 在AI驱动的纯文字版中，可以用按座次发言的方式，多轮循环直到大家都不想说了
-        # 或者简化为每人发一轮言
-        for p in self.state.players:
-            if p.player_id in self.broker.agents:
-                agent = self.broker.agents[p.player_id]
-                action = await agent.act(self.state, "speak")
-                if action.get("action") == "speak" and action.get("content"):
-                    e = GameEvent(
-                        event_type="player_speaks",
-                        phase=GamePhase.DAY_DISCUSSION,
-                        round_number=self.state.round_number,
-                        actor=p.player_id,
-                        visibility=Visibility.PUBLIC,
-                        payload={"content": action["content"], "tone": action.get("tone", "calm")}
-                    )
-                    await self.event_bus.publish(e)
-                    self.state = self.state.with_event(e)
+        """白天自由讨论环节 — 支持多轮"""
+        print(">>> [白天讨论] 讨论环节开始")
+        
+        # 每日开始时重置状态
+        self.state = self.state.with_update(
+            nominations_today=(),
+            nominees_today=(),
+            votes_today={},
+            current_nominee=None,
+            current_nominator=None
+        )
+
+        max_rounds = 3
+        current_round = 0
+        should_skip = False
+
+        while current_round < max_rounds and not should_skip:
+            current_round += 1
+            print(f">>> [白天讨论] 第 {current_round} 轮发言开始")
+            
+            for p in self.state.players:
+                if p.player_id in self.broker.agents:
+                    agent = self.broker.agents[p.player_id]
+                    # logger.info(f"[白天讨论] 等待玩家 {agent.name}({agent.player_id}) 发言...")
+                    try:
+                        action = await agent.act(self.state, "speak")
+                        
+                        if action.get("action") == "skip_discussion":
+                            logger.info(f"玩家 {agent.name} 请求结束讨论。")
+                            should_skip = True
+                            break
+
+                        if action.get("action") == "speak" and action.get("content"):
+                            e = GameEvent(
+                                event_type="player_speaks",
+                                phase=GamePhase.DAY_DISCUSSION,
+                                round_number=self.state.round_number,
+                                actor=p.player_id,
+                                visibility=Visibility.PUBLIC,
+                                payload={
+                                    "content": action["content"], 
+                                    "tone": action.get("tone", "calm"),
+                                    "round": current_round
+                                }
+                            )
+                            await self.event_bus.publish(e)
+                            self.state = self.state.with_event(e)
+                    except Exception as e:
+                        logger.error(f"[白天讨论] 玩家 {agent.player_id} 发言异常: {e}")
+                        continue
+            
+            if should_skip: break
+            # 轮次间稍微停顿
+            await asyncio.sleep(0.5)
+
+        print(">>> [白天讨论] 讨论环节结束")
 
     async def _run_nomination_phase(self) -> None:
         """提名环节。由于这里没人干预，我们可以让Agent轮流决定是否提名"""
+        print(">>> [提名阶段] 环节开始")
         for nominator_p in self.state.get_alive_players():
             if nominator_p.player_id in self.broker.agents:
                 agent = self.broker.agents[nominator_p.player_id]
+                print(f">>> [提名阶段] 正在请求 {agent.name}({agent.player_id}) 进行提名决策...")
                 action = await agent.act(self.state, "nominate")
+                print(f">>> [提名阶段] {agent.name} 返回: {action}")
                 
                 # 如果决定提名
                 if action.get("action") == "nominate" and action.get("target"):
