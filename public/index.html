@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鸦木布拉夫小镇 - 玩家控制台</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1e1e1e; color: #fff; margin: 0; padding: 20px; }
+        h1 { color: #bb86fc; }
+        .container { display: flex; gap: 20px; height: 90vh; }
+        .log-panel { flex: 2; background: #2d2d2d; padding: 15px; border-radius: 8px; overflow-y: auto; }
+        .control-panel { flex: 1; background: #2d2d2d; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 10px; }
+        .message { margin-bottom: 10px; padding: 10px; border-radius: 5px; background: #3d3d3d; }
+        .server-msg { border-left: 4px solid #bb86fc; }
+        .client-msg { border-left: 4px solid #03dac6; text-align: right; }
+        input, button, select { padding: 10px; border-radius: 4px; border: 1px solid #555; background: #444; color: white; }
+        button { background: #bb86fc; color: #000; font-weight: bold; cursor: pointer; }
+        button:hover { background: #a370f0; }
+        #connection-controls { margin-bottom: 20px; display: flex; gap: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🔮 鸦木布拉夫小镇 (Web Console)</h1>
+    
+    <div id="connection-controls">
+        <input type="text" id="playerId" value="h1" placeholder="玩家ID (例如 h1)">
+        <button id="connectBtn" onclick="connect()">连接服务器</button>
+        <button id="startBtn" onclick="startGame()" style="background: #03dac6;">启动游戏(Admin)</button>
+    </div>
+
+    <div class="container">
+        <div class="log-panel" id="logBox">
+            <div class="message">系统: 等待连接...</div>
+        </div>
+        
+        <div class="control-panel">
+            <h3>操作面板</h3>
+            <div id="action-prompt" style="color: #ffb74d; margin-bottom: 10px; font-weight: bold;">当前无需操作</div>
+            
+            <label>发言内容 / 技能目标</label>
+            <input type="text" id="actionInput" placeholder="请输入...">
+            
+            <label>语气 (仅发言有效)</label>
+            <select id="toneSelect">
+                <option value="calm">平静 (Calm)</option>
+                <option value="passionate">激动 (Passionate)</option>
+                <option value="defensive">防守 (Defensive)</option>
+                <option value="accusatory">指控 (Accusatory)</option>
+            </select>
+            
+            <label>是否赞成处决 (仅投票有效)</label>
+            <select id="voteSelect">
+                <option value="false">反对 / 弃权</option>
+                <option value="true">赞成 (投死)</option>
+            </select>
+
+            <button onclick="sendAction()" style="margin-top: auto;">提交行动</button>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let pendingActionType = null;
+
+        function logMessage(text, isServer = true) {
+            const box = document.getElementById('logBox');
+            const div = document.createElement('div');
+            div.className = `message ${isServer ? 'server-msg' : 'client-msg'}`;
+            // 简单转义防止XSS
+            div.textContent = text;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function connect() {
+            const pid = document.getElementById('playerId').value;
+            ws = new WebSocket(`ws://localhost:8000/ws/${pid}`);
+            
+            ws.onopen = () => {
+                logMessage(`成功连接到服务器: ${pid}`);
+                document.getElementById('connectBtn').textContent = "已连接";
+                document.getElementById('connectBtn').disabled = true;
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'event_update') {
+                        logMessage(`[事件 ${data.phase}] ${data.event.event_type} | ${JSON.stringify(data.event.payload)}`);
+                    } else if (data.type === 'action_request') {
+                        pendingActionType = data.action_type;
+                        const p = document.getElementById('action-prompt');
+                        p.textContent = `需要输入操作: ${data.action_type}`;
+                        logMessage(`🚨 系统请求行动: ${data.action_type} - ${JSON.stringify(data.context)}`);
+                    } else if (data.type === 'thought_prompt') {
+                        logMessage(`💭 系统提示: ${data.prompt}`);
+                    } else {
+                        logMessage(`未知消息: ${event.data}`);
+                    }
+                } catch(e) {
+                    logMessage(`原始消息: ${event.data}`);
+                }
+            };
+            
+            ws.onclose = () => {
+                logMessage("连接已断开");
+                document.getElementById('connectBtn').textContent = "重新连接";
+                document.getElementById('connectBtn').disabled = false;
+                ws = null;
+            };
+        }
+
+        async function startGame() {
+            try {
+                const res = await fetch('http://localhost:8000/api/game/start', { method: 'POST' });
+                const json = await res.json();
+                logMessage(`系统: 发送启动信号 - ${json.message}`);
+            } catch(e) {
+                logMessage(`启动失败: ${e.message}`);
+            }
+        }
+
+        function sendAction() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert("未连接到服务器！");
+                return;
+            }
+            if (!pendingActionType) {
+                alert("当前系统没有向你请求操作！");
+                return;
+            }
+            
+            const txt = document.getElementById('actionInput').value;
+            
+            let payload = { action: pendingActionType };
+            
+            if (pendingActionType === 'speak') {
+                payload.content = txt;
+                payload.tone = document.getElementById('toneSelect').value;
+            } else if (pendingActionType === 'night_action' || pendingActionType === 'nominate') {
+                payload.target = txt;
+            } else if (pendingActionType === 'vote') {
+                payload.decision = document.getElementById('voteSelect').value === 'true';
+            } else {
+                // fallbacks
+                payload.raw_input = txt;
+            }
+            
+            const msg = {
+                type: "action_response",
+                payload: payload
+            };
+            
+            ws.send(JSON.stringify(msg));
+            logMessage(`✅ 发送行动 [${pendingActionType}]: ${JSON.stringify(payload)}`, false);
+            
+            document.getElementById('action-prompt').textContent = "操作已提交，等待系统...";
+            pendingActionType = null;
+        }
+    </script>
+</body>
+</html>
