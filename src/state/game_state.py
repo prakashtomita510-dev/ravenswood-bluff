@@ -49,6 +49,7 @@ class Visibility(str, Enum):
     """信息可见性级别"""
     PUBLIC = "public"                   # 所有人可见
     TEAM_EVIL = "team_evil"             # 邪恶阵营可见
+    TEAM_GOOD = "team_good"             # 正义阵营可见
     PRIVATE = "private"                 # 仅个人可见
     STORYTELLER_ONLY = "storyteller_only"  # 仅说书人可见
 
@@ -121,25 +122,52 @@ class PlayerState(BaseModel):
     name: str
     role_id: str                                # 角色ID
     team: Team                                  # 阵营
+    true_role_id: Optional[str] = None          # 真实身份
+    perceived_role_id: Optional[str] = None     # 玩家自认身份
+    public_claim_role_id: Optional[str] = None  # 公开宣称身份
+    current_team: Optional[Team] = None         # 当前阵营（可被转化）
     is_alive: bool = True
     fake_role: Optional[str] = None             # 虚假身份（用于酒鬼等显示给玩家的假身份）
     statuses: tuple[PlayerStatus, ...] = (PlayerStatus.ALIVE,)
     has_used_dead_vote: bool = False             # 死后是否已使用最后一票
     ghost_votes_remaining: int = 1              # 剩余亡魂投票数
+    storyteller_notes: tuple[str, ...] = ()
+    ongoing_effects: tuple[str, ...] = ()
 
     def with_update(self, **kwargs) -> PlayerState:
         """创建一个更新了指定字段的新状态（不可变更新模式）"""
         data = self.model_dump()
         data.update(kwargs)
+        if data.get("true_role_id") is None:
+            data["true_role_id"] = data["role_id"]
+        if data.get("perceived_role_id") is None:
+            data["perceived_role_id"] = data.get("fake_role") or data["role_id"]
+        if data.get("current_team") is None:
+            data["current_team"] = data["team"]
         return PlayerState(**data)
+
+    def model_post_init(self, __context) -> None:
+        if self.true_role_id is None:
+            object.__setattr__(self, "true_role_id", self.role_id)
+        if self.perceived_role_id is None:
+            object.__setattr__(self, "perceived_role_id", self.fake_role or self.role_id)
+        if self.current_team is None:
+            object.__setattr__(self, "current_team", self.team)
 
     @property
     def is_poisoned(self) -> bool:
-        return PlayerStatus.POISONED in self.statuses or PlayerStatus.DRUNK in self.statuses
+        """是否处于中毒状态 (不含醉酒，用于说书人界面区分)"""
+        return PlayerStatus.POISONED in self.statuses
 
     @property
     def is_drunk(self) -> bool:
+        """是否处于醉酒状态"""
         return PlayerStatus.DRUNK in self.statuses
+    
+    @property
+    def ability_suppressed(self) -> bool:
+        """能力是否被抑制 (中毒或醉酒均导致抑制)"""
+        return self.is_poisoned or self.is_drunk
 
     @property
     def can_vote(self) -> bool:
@@ -162,6 +190,7 @@ class GameEvent(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
     phase: GamePhase
     round_number: int
+    trace_id: str = ""
     actor: Optional[str] = None       # 事件发起者的 player_id
     target: Optional[str] = None      # 事件目标的 player_id
     payload: dict = Field(default_factory=dict)
@@ -185,6 +214,33 @@ class ChatMessage(BaseModel):
     tone: str = "neutral"      # calm / passionate / accusatory / defensive
     target_player: Optional[str] = None  # 主要针对的玩家
     recipient_ids: Optional[tuple[str, ...]] = None # 私聊对象 (空则全公开)
+
+
+class PrivatePlayerView(BaseModel):
+    """同步给 Agent 的私有视角快照"""
+
+    player_id: str
+    name: str
+    true_role_id: str
+    perceived_role_id: str
+    public_claim_role_id: Optional[str] = None
+    current_team: Team
+    fake_role: Optional[str] = None
+    is_alive: bool = True
+    is_poisoned: bool = False
+    is_drunk: bool = False
+    storyteller_notes: tuple[str, ...] = ()
+    ongoing_effects: tuple[str, ...] = ()
+
+
+class ExecutionCandidate(BaseModel):
+    """当日可被处决候选记录"""
+
+    nominee_id: str
+    votes: int
+    nominator_id: str
+    passed: bool
+    trace_id: str = ""
 
 
 # ============================================================
@@ -220,6 +276,7 @@ class GameState(BaseModel):
     votes_today: dict = Field(default_factory=dict)   # 今天的投票记录
     nominations_today: tuple[str, ...] = ()     # 今天已提名过的玩家
     nominees_today: tuple[str, ...] = ()        # 今天已被提名过的玩家
+    execution_candidates: tuple[ExecutionCandidate, ...] = ()
 
     # 游戏结果
     winning_team: Optional[Team] = None
@@ -228,6 +285,7 @@ class GameState(BaseModel):
     config: Optional[GameConfig] = None
     grimoire: Optional[GrimoireInfo] = None
     bluffs: tuple[str, ...] = ()             # 给恶魔的伪装角色 (3个)
+    payload: dict = Field(default_factory=dict)  # 存储特定角色的中间数据 (如预言家的红鲱鱼)
 
     def get_player(self, player_id: str) -> Optional[PlayerState]:
         """根据 player_id 获取玩家状态"""
@@ -299,12 +357,19 @@ class ScriptConfig(BaseModel):
 class GameConfig(BaseModel):
     """游戏配置"""
     player_count: int
+    script: Optional[ScriptConfig] = None
     script_id: str = "trouble_brewing"
+    human_client_id: Optional[str] = None
+    human_mode: str = "none"  # player | storyteller | none
+    storyteller_client_id: Optional[str] = None
     human_player_ids: list[str] = Field(default_factory=list)  # 人类玩家ID
     is_human_participant: bool = True     # 人类是否参与游戏 (True: 玩家, False: 旁观)
     storyteller_mode: str = "auto"   # "auto" 自动说书人 / "human" 人类说书人
     llm_model: str = "gpt-4o-mini"
+    backend_mode: str = "auto"
+    audit_mode: bool = False
     discussion_rounds: int = 3       # 每天讨论轮数
+    max_nomination_rounds: Optional[int] = None
     turn_timeout: int = 300          # 人类玩家行动超时（秒）
 
 
@@ -317,14 +382,21 @@ class PlayerGrimoireInfo(BaseModel):
     player_id: str
     name: str
     role_id: str
+    true_role_id: Optional[str] = None
+    perceived_role_id: Optional[str] = None
+    public_claim_role_id: Optional[str] = None
     fake_role: Optional[str] = None
     team: Team
+    current_team: Optional[Team] = None
     is_alive: bool
     is_poisoned: bool
     is_drunk: bool
+    storyteller_notes: tuple[str, ...] = ()
+    ongoing_effects: tuple[str, ...] = ()
 
 
 class GrimoireInfo(BaseModel):
     """魔典：全局真实状态汇总"""
     players: tuple[PlayerGrimoireInfo, ...] = ()
     night_actions: tuple[dict, ...] = ()  # 昨晚行动记录 (扩展预留)
+    reminders: tuple[str, ...] = ()

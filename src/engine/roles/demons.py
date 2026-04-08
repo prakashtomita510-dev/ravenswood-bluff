@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from src.engine.roles.base_role import BaseRole, register_role
+from src.engine.roles.base_role import BaseRole, get_role_class, register_role
 from src.state.game_state import (
     Ability,
     AbilityTrigger,
@@ -18,6 +18,7 @@ from src.state.game_state import (
     GamePhase,
     GameState,
     PlayerState,
+    PlayerStatus,
     RoleDefinition,
     RoleType,
     Team,
@@ -30,6 +31,8 @@ logger = logging.getLogger(__name__)
 @register_role("imp")
 class ImpRole(BaseRole):
     """小恶魔: 每个除第一夜外的夜晚可以通过选择死亡一名玩家。如果小恶魔自杀，一个爪牙将变成小恶魔"""
+
+    requires_night_target = True
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -47,6 +50,30 @@ class ImpRole(BaseRole):
             ),
         )
 
+    def _find_scarlet_woman(self, game_state: GameState) -> Optional[PlayerState]:
+        """寻找当前存活且满足接管条件的绯红女郎。"""
+        role_cls = get_role_class("scarlet_woman")
+        if not role_cls:
+            return None
+        if not role_cls.should_trigger_on_demon_death(game_state):
+            return None
+        for player in game_state.get_alive_players():
+            if role_cls.is_eligible_replacement(game_state, player):
+                return player
+        return None
+
+    def _find_minion_replacement(self, game_state: GameState, exclude_player_id: str) -> Optional[PlayerState]:
+        """在没有绯红女郎时，选择一个存活爪牙接管。"""
+        for player in game_state.get_alive_players():
+            if player.player_id == exclude_player_id:
+                continue
+            if (player.true_role_id or player.role_id) == "scarlet_woman":
+                continue
+            role_cls = get_role_class(player.true_role_id or player.role_id)
+            if role_cls and role_cls.get_definition().role_type == RoleType.MINION:
+                return player
+        return None
+
     def execute_ability(
         self,
         game_state: GameState,
@@ -62,45 +89,69 @@ class ImpRole(BaseRole):
             raise ValueError("目标不存在")
 
         if not target_player.is_alive:
-            # 鞭尸不会真正死亡
             return game_state, []
 
         events = []
-        new_state = game_state.with_player_update(target, is_alive=False)
+        protected = PlayerStatus.PROTECTED in target_player.statuses
+        soldier_cls = get_role_class("soldier")
+        soldier_safe = bool(soldier_cls and soldier_cls.is_immune_to_demon(target_player))
+        if target != actor.player_id and (protected or soldier_safe):
+            return game_state, []
+
+        actual_target = target
+        mayor_cls = get_role_class("mayor")
+        redirected_from = None
+        if mayor_cls and mayor_cls.should_redirect_night_death(game_state, target_player) and target != actor.player_id:
+            redirected_target = mayor_cls.choose_redirection_target(game_state, mayor_player_id=target_player.player_id, killer_id=actor.player_id)
+            if redirected_target:
+                actual_target = redirected_target
+                redirected_from = target
+                target_player = game_state.get_player(actual_target)
+
+        new_state = game_state.with_player_update(actual_target, is_alive=False)
 
         kill_event = GameEvent(
             event_type="night_kill",
             phase=GamePhase.NIGHT,
             round_number=game_state.round_number,
             actor=actor.player_id,
-            target=target,
+            target=actual_target,
             visibility=Visibility.STORYTELLER_ONLY,
-            payload={"killer_role": "imp"}
+            payload={
+                "killer_role": "imp",
+                "resolved_target_role": target_player.true_role_id or target_player.role_id,
+                "redirected_from": redirected_from,
+            },
         )
         events.append(kill_event)
         new_state = new_state.with_event(kill_event)
 
         # 检查是否自杀传递小恶魔
-        if target == actor.player_id:
-            # 找到一个存活的爪牙并变成小恶魔
-            from src.engine.roles.base_role import get_role_class
-            minions = []
-            for p in game_state.get_alive_players():
-                if p.player_id != actor.player_id:
-                    cls = get_role_class(p.role_id)
-                    if cls and cls.get_definition().role_type == RoleType.MINION:
-                        minions.append(p)
-            
-            if minions:
-                new_imp = minions[0]  # 这里简单取第一个，如果有多个，由于没有其他输入，先这么处理
-                new_state = new_state.with_player_update(new_imp.player_id, role_id="imp")
+        if actual_target == actor.player_id:
+            replacement = self._find_scarlet_woman(game_state)
+            replacement_reason = "scarlet_woman_trigger"
+            if not replacement:
+                replacement = self._find_minion_replacement(game_state, exclude_player_id=actor.player_id)
+                replacement_reason = "imp_suicide"
+
+            if replacement:
+                new_state = new_state.with_player_update(
+                    replacement.player_id,
+                    role_id="imp",
+                    team=Team.EVIL,
+                    true_role_id="imp",
+                    perceived_role_id="imp",
+                    current_team=Team.EVIL,
+                    storyteller_notes=replacement.storyteller_notes + ("role_transferred_to_imp",),
+                )
                 transfer_event = GameEvent(
                     event_type="role_transfer",
                     phase=GamePhase.NIGHT,
                     round_number=game_state.round_number,
-                    target=new_imp.player_id,
+                    actor=actor.player_id,
+                    target=replacement.player_id,
                     visibility=Visibility.STORYTELLER_ONLY,
-                    payload={"new_role": "imp", "reason": "imp_suicide"}
+                    payload={"new_role": "imp", "reason": replacement_reason},
                 )
                 events.append(transfer_event)
                 new_state = new_state.with_event(transfer_event)

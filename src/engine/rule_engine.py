@@ -9,7 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from src.state.game_state import GamePhase, GameState, PlayerState
+from src.engine.roles.base_role import get_role_class
+from src.state.game_state import ExecutionCandidate, GamePhase, GameState, PlayerState
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,11 @@ class RuleEngine:
     """
     负责游戏中各项行为的合法性检查
     """
+
+    @staticmethod
+    def votes_required(game_state: GameState) -> int:
+        """血染钟楼处决门槛：严格多于半数存活玩家。"""
+        return (game_state.alive_count // 2) + 1
 
     @staticmethod
     def can_nominate(
@@ -53,8 +59,6 @@ class RuleEngine:
             return False, "死亡玩家不能发起提名"
         
         if not nominee.is_alive:
-            # 允许提名死人（有些特殊情况下或村规，但默认情况通常不能被处决，不过机制上一般不严格限制提名死人，
-            # 官方规则通常允许提名死玩家，但死玩家不能被再次处决，这里默认死亡玩家不能被提名以简化）
             return False, "不能提名已死亡的玩家"
 
         # 3. 每日限制检查
@@ -67,7 +71,7 @@ class RuleEngine:
             
         # 检查今天是否已经被提名过（需要在game_state中记录，暂时假设这里只查记录）
         # 血染规则：每个人每天可以被提名一次，每次可以提名一个人
-        if hasattr(game_state, "nominees_today") and nominee_id in getattr(game_state, "nominees_today", []):
+        if nominee_id in game_state.nominees_today:
             return False, f"玩家 {nominee.name} 今天已经被提名过了"
 
         return True, ""
@@ -93,7 +97,31 @@ class RuleEngine:
         if not voter.can_vote:
             return False, "该玩家已耗尽选票（死亡且使用了最后一次投票权）"
 
+        voter_role_id = voter.true_role_id or voter.role_id
+        if voter_role_id == "butler":
+            butler_cls = get_role_class("butler")
+            if butler_cls:
+                binding = butler_cls.get_active_binding(game_state, voter_id)
+                if binding:
+                    target_id = binding.get("target_id")
+                    target = game_state.get_player(target_id) if target_id else None
+                    if not target:
+                        return False, "管家绑定的目标已离场"
+                    if not target.can_vote:
+                        return False, "管家只能在其选择的玩家能够投票时投票"
+
         return True, ""
+
+    @staticmethod
+    def get_execution_candidate(game_state: GameState) -> ExecutionCandidate | None:
+        passed = [c for c in game_state.execution_candidates if c.passed]
+        if not passed:
+            return None
+        highest = max(c.votes for c in passed)
+        top = [c for c in passed if c.votes == highest]
+        if len(top) != 1:
+            return None
+        return top[0]
 
     @staticmethod
     def can_speak(

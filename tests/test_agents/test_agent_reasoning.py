@@ -9,7 +9,7 @@ from src.agents.dialogue.dialogue_manager import DialogueManager
 from src.agents.memory.social_graph import SocialGraph
 from src.agents.memory.working_memory import WorkingMemory
 from src.llm.base_backend import LLMBackend, LLMResponse, Message
-from src.state.game_state import GameState, PlayerState, GameEvent, GamePhase, Team
+from src.state.game_state import ChatMessage, GameState, PlayerState, GameEvent, GamePhase, Team
 
 
 class DummyBackend(LLMBackend):
@@ -120,3 +120,77 @@ async def test_dialogue_manager():
     assert res["action"] == "speak"
     assert res["content"] == "我同意大家的看法"
     assert res["target_player"] == "Bob"
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_fallback_nomination_returns_legal_target():
+    class BrokenBackend(DummyBackend):
+        async def generate(self, system_prompt: str, messages: list[Message], **kwargs) -> LLMResponse:
+            return LLMResponse(content='{"action":"nominate","target":"nobody"}', tool_calls=[])
+
+    agent = AIAgent(
+        player_id="p1",
+        name="Alice",
+        backend=BrokenBackend(),
+        persona=Persona(description="强势带节奏者", speaking_style="直接、喜欢推动局面"),
+    )
+    state = GameState(
+        phase=GamePhase.NOMINATION,
+        round_number=1,
+        day_number=2,
+        current_nominee=None,
+        current_nominator=None,
+        nominees_today=(),
+        nominations_today=(),
+        chat_history=(
+            ChatMessage(speaker="p3", content="Bob 的解释有点怪", phase=GamePhase.DAY_DISCUSSION, round_number=1),
+            ChatMessage(speaker="p1", content="Bob 这边我还是有点怀疑", phase=GamePhase.DAY_DISCUSSION, round_number=1),
+            ChatMessage(speaker="p3", content="Bob 需要再解释一下", phase=GamePhase.DAY_DISCUSSION, round_number=1),
+        ),
+        event_log=(
+            GameEvent(
+                event_type="nomination_started",
+                phase=GamePhase.NOMINATION,
+                round_number=1,
+                actor="p3",
+                target="p2",
+            ),
+        ),
+        players=(
+            PlayerState(player_id="p1", name="Alice", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Bob", role_id="imp", team=Team.EVIL),
+            PlayerState(player_id="p3", name="Charlie", role_id="chef", team=Team.GOOD),
+        ),
+    )
+
+    decision = await agent.act(state, "nominate")
+    assert decision["action"] == "nominate"
+    assert decision["target"] == "p2"
+    assert "怀疑度" in decision["reasoning"]
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_fallback_vote_remains_structured():
+    class BrokenBackend(DummyBackend):
+        async def generate(self, system_prompt: str, messages: list[Message], **kwargs) -> LLMResponse:
+            return LLMResponse(content='{"action":"speak","content":"随便"}', tool_calls=[])
+
+    agent = AIAgent(
+        player_id="p1",
+        name="Alice",
+        backend=BrokenBackend(),
+        persona=Persona(description="冷静村民", speaking_style="平稳"),
+    )
+    state = GameState(
+        phase=GamePhase.VOTING,
+        round_number=1,
+        current_nominee="p2",
+        players=(
+            PlayerState(player_id="p1", name="Alice", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Bob", role_id="imp", team=Team.EVIL),
+        ),
+    )
+
+    decision = await agent.act(state, "vote")
+    assert decision["action"] == "vote"
+    assert isinstance(decision["decision"], bool)

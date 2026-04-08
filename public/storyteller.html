@@ -3,113 +3,484 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>鸦木布拉夫小镇 - 说书人控制台 (上帝视角)</title>
+    <title>鸦木布拉夫小镇 - 说书人控制台</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #fff; margin: 0; padding: 20px; }
-        h1 { color: #f2a900; }
-        .dashboard { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
-        .card { background: #2d2d2d; border-radius: 8px; padding: 15px; border-top: 4px solid #f2a900; }
-        .player-list { list-style: none; padding: 0; }
-        .player-li { padding: 10px; margin-bottom: 10px; background: #3c3c3c; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;}
-        .living { border-left: 5px solid #03dac6; }
-        .dead { border-left: 5px solid #cf6679; opacity: 0.6; }
-        .team-good { color: #03dac6; font-weight: bold; }
-        .team-evil { color: #cf6679; font-weight: bold; }
-        .status-badge { background: #ffb74d; color: black; padding: 2px 5px; border-radius: 4px; font-size: 0.8em; }
-        button { background: #f2a900; border: none; color: black; padding: 10px 15px; font-weight: bold; border-radius: 4px; cursor: pointer; }
-        button:hover { background: #d49504; }
+        :root {
+            --bg: #111114;
+            --panel: rgba(255, 255, 255, 0.05);
+            --panel-strong: rgba(255, 255, 255, 0.08);
+            --line: rgba(255, 255, 255, 0.09);
+            --text: #f4f1e8;
+            --muted: #b7b1a3;
+            --accent: #f2a900;
+            --good: #03dac6;
+            --evil: #cf6679;
+            --info: #8ab4ff;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            padding: 24px;
+            color: var(--text);
+            font-family: "Segoe UI", "Noto Sans SC", sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(242, 169, 0, 0.10), transparent 28%),
+                radial-gradient(circle at top right, rgba(3, 218, 198, 0.08), transparent 24%),
+                linear-gradient(180deg, #16161a 0%, #0f0f12 100%);
+        }
+
+        h1, h2, h3, p { margin-top: 0; }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+
+        .title-block {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .eyebrow {
+            color: var(--accent);
+            letter-spacing: 0.16em;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .title {
+            font-size: 28px;
+            line-height: 1.15;
+            margin: 0;
+        }
+
+        .subtitle { color: var(--muted); font-size: 14px; }
+
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        button {
+            border: 1px solid transparent;
+            border-radius: 10px;
+            padding: 10px 14px;
+            background: var(--panel-strong);
+            color: var(--text);
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        button:hover { border-color: rgba(255,255,255,0.18); }
+        button.primary { background: var(--accent); color: #17120a; }
+        button.ghost { background: transparent; border-color: var(--line); }
+
+        .shell {
+            display: grid;
+            grid-template-columns: 1.1fr 1fr;
+            gap: 16px;
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 18px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+        }
+
+        .card h2 {
+            font-size: 18px;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .metric {
+            padding: 14px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+        }
+
+        .metric .label { color: var(--muted); font-size: 12px; }
+        .metric .value { font-size: 22px; font-weight: 700; margin-top: 6px; }
+
+        .state-list, .event-list, .player-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: grid;
+            gap: 10px;
+        }
+
+        .row {
+            display: flex;
+            justify-content: space-between;
+            gap: 14px;
+            align-items: flex-start;
+            padding: 12px 14px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+        }
+
+        .row small { color: var(--muted); }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            background: rgba(255,255,255,0.08);
+        }
+
+        .badge.good { color: var(--good); }
+        .badge.evil { color: var(--evil); }
+        .badge.info { color: var(--info); }
+        .badge.warn { color: var(--accent); }
+
+        .muted { color: var(--muted); }
+        .status-line {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .player-card {
+            display: grid;
+            gap: 6px;
+        }
+
+        .player-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .player-name { font-weight: 700; }
+        .player-meta { color: var(--muted); font-size: 13px; }
+        .tag-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .code-box {
+            font-family: Consolas, "SFMono-Regular", monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: rgba(0,0,0,0.28);
+            border-radius: 12px;
+            border: 1px solid var(--line);
+            padding: 12px;
+            color: #efe7d1;
+            min-height: 120px;
+        }
+
+        .empty {
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px dashed var(--line);
+            color: var(--muted);
+            text-align: center;
+        }
+
+        @media (max-width: 1100px) {
+            .shell, .two-col, .grid-3 { grid-template-columns: 1fr; }
+            .topbar { flex-direction: column; }
+            .toolbar { justify-content: flex-start; }
+        }
     </style>
 </head>
 <body>
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h1>📖 说书人控制台 (Admin Dashboard)</h1>
-        <div>
-            <button onclick="refreshState()">↻ 刷新局势</button>
-            <button onclick="startGame()" style="background: #03dac6;">▶ 启动游戏循环</button>
+    <div class="topbar">
+        <div class="title-block">
+            <div class="eyebrow">Ravenswood Bluff</div>
+            <h1 class="title">说书人控制台</h1>
+            <div class="subtitle">用于观察全局状态、夜晚步骤和魔典视图。页面不再依赖 `/api/game/start` 作为主路径。</div>
+        </div>
+        <div class="toolbar">
+            <button class="ghost" onclick="refreshAll()">刷新全局</button>
+            <button class="ghost" onclick="loadNightStep()">查看夜晚步骤</button>
+            <button class="primary" onclick="pollOnce()">快速轮询</button>
         </div>
     </div>
 
-    <div class="dashboard">
-        <div class="card">
-            <h2>全局状态</h2>
-            <div id="globalState">加载中...</div>
+    <div class="grid-3">
+        <div class="metric">
+            <div class="label">当前阶段</div>
+            <div class="value" id="metricPhase">-</div>
         </div>
-        <div class="card" style="grid-column: span 2;">
-            <h2>玩家列表 (共 <span id="aliveCount">-</span> 存活)</h2>
-            <ul class="player-list" id="playerList">
-                <li>加载中...</li>
-            </ul>
+        <div class="metric">
+            <div class="label">轮次 / 天数</div>
+            <div class="value" id="metricRound">-</div>
+        </div>
+        <div class="metric">
+            <div class="label">存活人数</div>
+            <div class="value" id="metricAlive">-</div>
         </div>
     </div>
+
+    <div class="shell">
+        <section class="card">
+            <h2>全局状态 <span class="badge info" id="backendBadge">API</span></h2>
+            <div id="stateSummary" class="state-list"></div>
+            <div class="status-line" id="stateStatus">等待加载中...</div>
+        </section>
+
+        <section class="card">
+            <h2>最近关键事件 / 提名统计</h2>
+            <div id="metricsSummary" class="state-list"></div>
+            <div class="status-line">如果后端暂未提供完整指标，这里会自动回退为占位说明，不影响页面使用。</div>
+        </section>
+    </div>
+
+    <div style="height:16px"></div>
+
+    <div class="two-col">
+        <section class="card">
+            <h2>夜晚步骤</h2>
+            <div id="nightStep" class="code-box">尚未请求夜晚步骤。</div>
+            <div class="status-line">通过 `/api/storyteller/night/next` 拉取下一步夜晚编排。</div>
+        </section>
+
+        <section class="card">
+            <h2>夜晚信息 / 魔典快照</h2>
+            <div id="grimoireSummary" class="status-line">加载中...</div>
+            <ul id="playerList" class="player-list"></ul>
+        </section>
+    </div>
+
+    <div style="height:16px"></div>
+
+    <section class="card">
+        <h2>可观测摘要</h2>
+        <div id="eventsSummary" class="event-list"></div>
+    </section>
 
     <script>
-        async function refreshState() {
-            try {
-                const res = await fetch('http://localhost:8000/api/game/state');
-                const data = await res.json();
-                
-                if (data.status === "error") {
-                    document.getElementById('globalState').innerHTML = `<p style="color:red">${data.message}</p>`;
-                    return;
+        const API_BASE = (location.origin && location.origin !== "null") ? location.origin : "http://localhost:8000";
+        const stateCache = {
+            state: null,
+            metrics: null,
+            grimoire: null,
+        };
+
+        function apiUrl(path) {
+            return `${API_BASE}${path}`;
+        }
+
+        async function fetchJson(path, options = {}) {
+            const res = await fetch(apiUrl(path), {
+                headers: { "Content-Type": "application/json" },
+                ...options,
+            });
+            return await res.json();
+        }
+
+        function normalizePhase(value) {
+            if (!value) return "-";
+            return String(value).toUpperCase();
+        }
+
+        function renderMetricSummary(metrics) {
+            const box = document.getElementById("metricsSummary");
+            if (!metrics || Object.keys(metrics).length === 0) {
+                box.innerHTML = `<li class="row"><div><strong>暂无指标</strong><div><small>后端未返回 /api/game/metrics，已保留页面可用性。</small></div></div><span class="badge warn">placeholder</span></li>`;
+                return;
+            }
+
+            const items = [];
+            const pick = (keys, fallback = "-") => {
+                for (const key of keys) {
+                    if (metrics[key] !== undefined && metrics[key] !== null && metrics[key] !== "") return metrics[key];
                 }
+                return fallback;
+            };
 
-                // 全局状态
-                document.getElementById('globalState').innerHTML = `
-                    <p><strong>当前阶段:</strong> ${data.phase}</p>
-                    <p><strong>当前轮数:</strong> 第 ${data.round_number} 轮</p>
-                    <p><strong>当前被提名者:</strong> ${data.current_nominee || '无'}</p>
-                `;
-                
-                document.getElementById('aliveCount').innerText = data.alive_count;
+            items.push(["最近事件", pick(["recent_event", "latest_event", "last_event"])]);
+            items.push(["提名尝试", pick(["nomination_attempts", "nominate_attempts", "nominations_today"])]);
+            items.push(["合法提名", pick(["legal_nominations", "valid_nominations"])]);
+            items.push(["投票统计", pick(["vote_counts", "votes_today"])]);
+            items.push(["处决结果", pick(["execution_result", "latest_execution"])]);
 
-                // 玩家列表
-                const list = document.getElementById('playerList');
-                list.innerHTML = '';
-                
-                data.players.forEach(p => {
-                    const li = document.createElement('li');
-                    li.className = `player-li ${p.is_alive ? 'living' : 'dead'}`;
-                    
-                    let badges = [];
-                    if (p.is_poisoned) badges.push('<span class="status-badge">中毒</span>');
-                    if (p.is_drunk) badges.push('<span class="status-badge">醉酒</span>');
-                    
-                    li.innerHTML = `
-                        <div>
-                            <strong>${p.name}</strong> (${p.player_id})
-                            <div style="font-size: 0.9em; margin-top: 5px;">
-                                角色: ${p.role_id} | 
-                                阵营: <span class="${p.team === 'good' ? 'team-good' : 'team-evil'}">${p.team === 'good' ? '好人' : '邪恶'}</span>
-                                ${badges.join(' ')}
+            box.innerHTML = items.map(([label, value]) => `
+                <li class="row">
+                    <div><strong>${label}</strong><div><small>${typeof value === "object" ? JSON.stringify(value) : value}</small></div></div>
+                    <span class="badge info">metric</span>
+                </li>
+            `).join("");
+        }
+
+        function renderStateSummary(state) {
+            const box = document.getElementById("stateSummary");
+            if (!state || state.status === "error") {
+                const message = state?.message || "无法读取游戏状态";
+                box.innerHTML = `<li class="empty">${message}</li>`;
+                return;
+            }
+
+            const items = [
+                ["阶段", normalizePhase(state.phase)],
+                ["轮次", state.round_number ?? "-"],
+                ["天数", state.day_number ?? "-"],
+                ["存活", state.alive_count ?? "-"],
+                ["当前被提名者", state.current_nominee ?? "无"],
+                ["当前提名人", state.current_nominator ?? "无"],
+            ];
+
+            box.innerHTML = items.map(([label, value]) => `
+                <li class="row">
+                    <div><strong>${label}</strong><div><small>${value}</small></div></div>
+                    <span class="badge">${label === "阶段" ? normalizePhase(state.phase) : "state"}</span>
+                </li>
+            `).join("");
+
+            document.getElementById("metricPhase").innerText = normalizePhase(state.phase);
+            document.getElementById("metricRound").innerText = `${state.round_number ?? "-"} / ${state.day_number ?? "-"}`;
+            document.getElementById("metricAlive").innerText = state.alive_count ?? "-";
+            document.getElementById("stateStatus").innerText = `最后刷新：${new Date().toLocaleTimeString()}`;
+        }
+
+        function renderGrimoire(grimoire) {
+            const list = document.getElementById("playerList");
+            const summary = document.getElementById("grimoireSummary");
+
+            if (!grimoire || grimoire.status === "error") {
+                const message = grimoire?.message || "无法读取魔典";
+                summary.innerText = message;
+                list.innerHTML = `<li class="empty">${message}</li>`;
+                return;
+            }
+
+            const players = Array.isArray(grimoire.players) ? grimoire.players : [];
+            summary.innerText = `魔典载入 ${players.length} 名玩家${grimoire.night_actions ? `，夜晚记录 ${grimoire.night_actions.length} 条` : ""}`;
+
+            list.innerHTML = players.map((p, index) => {
+                const team = p.current_team || p.team || "unknown";
+                const tags = [];
+                if (p.is_poisoned) tags.push(`<span class="badge warn">中毒</span>`);
+                if (p.is_drunk) tags.push(`<span class="badge info">醉酒</span>`);
+                if (!p.is_alive) tags.push(`<span class="badge evil">死亡</span>`);
+                if (p.storyteller_notes) tags.push(`<span class="badge">备注</span>`);
+                if (p.ongoing_effects && p.ongoing_effects.length) tags.push(`<span class="badge">效果 ${p.ongoing_effects.length}</span>`);
+
+                return `
+                    <li class="row player-card">
+                        <div class="player-top">
+                            <div>
+                                <div class="player-name">${index + 1}. ${p.name || p.player_id}</div>
+                                <div class="player-meta">${p.player_id} · ${p.role_id || "-"} → ${p.perceived_role_id || p.role_id || "-"}</div>
                             </div>
+                            <span class="badge ${String(team).includes("evil") ? "evil" : "good"}">${String(team)}</span>
                         </div>
-                        <div>
-                            ${p.is_alive ? '🟢 存活' : '💀 死亡'}
-                        </div>
-                    `;
-                    list.appendChild(li);
-                });
-
-            } catch(e) {
-                console.error(e);
-                alert("刷新失败，请确保后台在运行！");
-            }
+                        <div class="tag-row">${tags.join("") || '<span class="badge">无额外状态</span>'}</div>
+                    </li>
+                `;
+            }).join("") || `<li class="empty">当前没有可展示的魔典玩家。</li>`;
         }
 
-        async function startGame() {
+        function renderEventsSummary(state, metrics, grimoire) {
+            const box = document.getElementById("eventsSummary");
+            const stateEvents = state?.event_log ? state.event_log.slice(-3) : [];
+            const metricSummary = metrics ? Object.entries(metrics).slice(0, 4) : [];
+            const grimoireCount = grimoire?.night_actions?.length ?? 0;
+
+            const items = [];
+            items.push({
+                label: "最近状态",
+                value: stateEvents.length ? `最后 ${stateEvents.length} 条事件已载入` : "state 暂无事件摘要",
+                badge: "state"
+            });
+            items.push({
+                label: "指标摘要",
+                value: metricSummary.length ? metricSummary.map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(" | ") : "metrics 暂未返回",
+                badge: "metric"
+            });
+            items.push({
+                label: "魔典记录",
+                value: `night_actions: ${grimoireCount}`,
+                badge: "grimoire"
+            });
+
+            box.innerHTML = items.map(item => `
+                <div class="row">
+                    <div>
+                        <strong>${item.label}</strong>
+                        <div><small>${item.value}</small></div>
+                    </div>
+                    <span class="badge info">${item.badge}</span>
+                </div>
+            `).join("");
+        }
+
+        async function refreshAll() {
+            document.getElementById("stateStatus").innerText = "正在刷新...";
             try {
-                const res = await fetch('http://localhost:8000/api/game/start', { method: 'POST' });
-                const json = await res.json();
-                alert(json.message);
-                setTimeout(refreshState, 1000);
-            } catch(e) {
-                alert(`启动失败: ${e.message}`);
+                const [state, metrics, grimoire] = await Promise.all([
+                    fetchJson("/api/game/state"),
+                    fetchJson("/api/game/metrics").catch(() => null),
+                    fetchJson("/api/game/grimoire?view=full").catch(() => null),
+                ]);
+
+                stateCache.state = state;
+                stateCache.metrics = metrics;
+                stateCache.grimoire = grimoire;
+
+                renderStateSummary(state);
+                renderMetricSummary(metrics);
+                renderGrimoire(grimoire);
+                renderEventsSummary(state, metrics, grimoire);
+                document.getElementById("backendBadge").innerText = "LIVE";
+            } catch (error) {
+                document.getElementById("stateStatus").innerText = `刷新失败：${error.message}`;
+                document.getElementById("backendBadge").innerText = "ERROR";
             }
         }
 
-        // 初始拉取
-        refreshState();
-        setInterval(refreshState, 5000); // 轮询最新状态
+        async function loadNightStep() {
+            const panel = document.getElementById("nightStep");
+            panel.innerText = "正在请求下一步夜晚步骤...";
+            try {
+                const data = await fetchJson("/api/storyteller/night/next", { method: "POST", body: JSON.stringify({}) });
+                panel.innerText = JSON.stringify(data, null, 2);
+            } catch (error) {
+                panel.innerText = `夜晚步骤获取失败：${error.message}`;
+            }
+        }
+
+        async function pollOnce() {
+            await refreshAll();
+            await loadNightStep();
+        }
+
+        refreshAll();
+        setInterval(refreshAll, 5000);
     </script>
 </body>
 </html>

@@ -15,17 +15,36 @@ from src.state.game_state import (
     AbilityTrigger,
     AbilityType,
     GameEvent,
+    GamePhase,
     GameState,
     PlayerState,
     RoleDefinition,
     RoleType,
     Team,
+    Visibility,
 )
+
+
+def _is_first_night(game_state: GameState) -> bool:
+    return game_state.phase in (GamePhase.SETUP, GamePhase.FIRST_NIGHT)
+
+
+def _pick_decoy_pair(game_state: GameState, actor_id: str, target_player_id: str) -> list[str]:
+    others = [p for p in game_state.players if p.player_id not in (actor_id, target_player_id)]
+    decoy = random.choice(others) if others else game_state.get_player(target_player_id)
+    pair = [target_player_id]
+    if decoy:
+        pair.append(decoy.player_id)
+    random.shuffle(pair)
+    return pair
 
 
 @register_role("washerwoman")
 class WasherwomanRole(BaseRole):
     """洗衣妇: 你会得知两位玩家中有一位是某个特定的村民角色"""
+
+    fixed_info_role = True
+    storyteller_info_role = True
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -39,7 +58,7 @@ class WasherwomanRole(BaseRole):
                 trigger=AbilityTrigger.FIRST_NIGHT,
                 action_type=AbilityType.INFO_GATHER,
                 description="你会得知两位玩家中有一位是某个特定的村民角色",
-                night_order=32,
+                night_order=34,
             ),
         )
 
@@ -55,19 +74,22 @@ class WasherwomanRole(BaseRole):
         # 记录使用了技能。
         return game_state, []
 
-    def get_night_info(
+    def build_storyteller_info(
         self,
         game_state: GameState,
         actor: PlayerState,
     ) -> Optional[dict]:
-        """为洗衣妇生成夜晚信息（由编排器或自动说书人调用）"""
+        """为洗衣妇生成供说书人裁定的原始夜晚信息。"""
+        if not _is_first_night(game_state):
+            return None
+
         # 如果中毒，可能会获得假信息（这通常由编排器决定，这里只提供基础真实逻辑）
         # 1. 找到在场的所有其他村民
         townsfolks = [
             p for p in game_state.players 
             if p.player_id != actor.player_id 
-            and p.role_id != "washerwoman"
-            and self._is_townsfolk_role(p.role_id)
+            and (p.true_role_id or p.role_id) != "washerwoman"
+            and self._is_townsfolk_role(p.true_role_id or p.role_id)
         ]
         
         if not townsfolks:
@@ -75,22 +97,21 @@ class WasherwomanRole(BaseRole):
             
         # 2. 随机选一个真实的
         target_player = random.choice(townsfolks)
-        target_role_id = target_player.role_id
-        
-        # 3. 随机选一个其他人干扰
-        others = [p for p in game_state.players 
-                  if p.player_id not in (actor.player_id, target_player.player_id)]
-        decoy = random.choice(others) if others else target_player
-        
-        # 打乱顺序
-        pair = [target_player.player_id, decoy.player_id]
-        random.shuffle(pair)
+        target_role_id = target_player.true_role_id or target_player.role_id
+        pair = _pick_decoy_pair(game_state, actor.player_id, target_player.player_id)
         
         return {
             "type": "washerwoman_info",
             "players": pair,
             "role_seen": target_role_id
         }
+
+    def get_night_info(
+        self,
+        game_state: GameState,
+        actor: PlayerState,
+    ) -> Optional[dict]:
+        return self.build_storyteller_info(game_state, actor)
 
     def _is_townsfolk_role(self, role_id: str) -> bool:
         from src.engine.roles.base_role import get_role_class
@@ -103,6 +124,9 @@ class WasherwomanRole(BaseRole):
 @register_role("empath")
 class EmpathRole(BaseRole):
     """共情者: 每晚你会得知你的两个活着的邻居中有几个是邪恶的"""
+
+    fixed_info_role = True
+    storyteller_info_role = True
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -129,7 +153,7 @@ class EmpathRole(BaseRole):
     ) -> tuple[GameState, list[GameEvent]]:
         return game_state, []
 
-    def get_night_info(
+    def build_storyteller_info(
         self,
         game_state: GameState,
         actor: PlayerState,
@@ -155,12 +179,12 @@ class EmpathRole(BaseRole):
 
         evil_count = 0
         left_player = game_state.get_player(seat_order[left_idx])
-        if left_player and left_player.team == Team.EVIL:
+        if left_player and (left_player.current_team or left_player.team) == Team.EVIL:
             evil_count += 1
             
         right_player = game_state.get_player(seat_order[right_idx])
         # 如果只剩两个人（自己和另一个活人），不重复计算
-        if left_idx != right_idx and right_player and right_player.team == Team.EVIL:
+        if left_idx != right_idx and right_player and (right_player.current_team or right_player.team) == Team.EVIL:
             evil_count += 1
 
         return {
@@ -168,10 +192,20 @@ class EmpathRole(BaseRole):
             "evil_count": evil_count
         }
 
+    def get_night_info(
+        self,
+        game_state: GameState,
+        actor: PlayerState,
+    ) -> Optional[dict]:
+        return self.build_storyteller_info(game_state, actor)
+
 
 @register_role("undertaker")
 class UndertakerRole(BaseRole):
     """送葬者: 每个夜晚*，得知今天白天被处决的玩家角色"""
+
+    fixed_info_role = True
+    storyteller_info_role = True
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -194,17 +228,38 @@ class UndertakerRole(BaseRole):
     ) -> tuple[GameState, list[GameEvent]]:
         return game_state, []
 
-    def get_night_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
-        if actor.is_drunk() or actor.is_poisoned():
-            return {"type": "undertaker_info", "role_seen": "drunk_fake_role"}
+    def build_storyteller_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
+        if actor.ability_suppressed:
+            # 中毒/醉酒时给一个随机身份
+            from src.engine.roles.base_role import get_all_role_ids
+            fake = random.choice(get_all_role_ids())
+            return {"type": "undertaker_info", "role_seen": fake}
             
-        # Simplified: Check if anyone died by execution today.
-        return {"type": "undertaker_info", "role_seen": "unknown_due_to_simple_impl"}
+        # 查找今天白天被处决的人
+        # 遍历事件日志，寻找类型为 player_death 且理由为 execution 的事件
+        target_role = None
+        for event in reversed(game_state.event_log):
+            if event.event_type == "execution_resolved" and event.payload.get("executed"):
+                victim = game_state.get_player(event.payload["executed"])
+                if victim:
+                    target_role = victim.true_role_id or victim.role_id
+                    break
+        
+        if not target_role:
+            return None
+            
+        return {"type": "undertaker_info", "role_seen": target_role}
+
+    def get_night_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
+        return self.build_storyteller_info(game_state, actor)
 
 
 @register_role("chef")
 class ChefRole(BaseRole):
     """厨师: 你得知有多少对邪恶玩家邻座"""
+
+    fixed_info_role = True
+    storyteller_info_role = True
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -218,28 +273,37 @@ class ChefRole(BaseRole):
                 trigger=AbilityTrigger.FIRST_NIGHT,
                 action_type=AbilityType.INFO_GATHER,
                 description="你会得知有多少对邪恶阵营玩家是邻座的",
-                night_order=35,
+                night_order=37,
             ),
         )
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
         return game_state, []
 
-    def get_night_info(self, game_state, actor):
+    def build_storyteller_info(self, game_state, actor):
+        if not _is_first_night(game_state):
+            return None
+
         seat_order = game_state.seat_order
         n = len(seat_order)
         pairs = 0
         for i in range(n):
             p1 = game_state.get_player(seat_order[i])
             p2 = game_state.get_player(seat_order[(i+1)%n])
-            if p1 and p2 and p1.team == Team.EVIL and p2.team == Team.EVIL:
+            if p1 and p2 and (p1.current_team or p1.team) == Team.EVIL and (p2.current_team or p2.team) == Team.EVIL:
                 pairs += 1
         return {"type": "chef_info", "pairs": pairs}
+
+    def get_night_info(self, game_state, actor):
+        return self.build_storyteller_info(game_state, actor)
 
 
 @register_role("librarian")
 class LibrarianRole(BaseRole):
     """图书馆员: 你得知两位玩家中有一位是某个特定的外来者角色，或者没有外来者"""
+
+    fixed_info_role = True
+    storyteller_info_role = True
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -253,24 +317,27 @@ class LibrarianRole(BaseRole):
                 trigger=AbilityTrigger.FIRST_NIGHT,
                 action_type=AbilityType.INFO_GATHER,
                 description="你会得知两位玩家中有一位是某个特定的外来者角色，或者没有外来者",
-                night_order=33,
+                night_order=35,
             ),
         )
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
         return game_state, []
 
-    def get_night_info(self, game_state, actor):
-        outsiders = [p for p in game_state.players if p.player_id != actor.player_id and self._is_outsider_role(p.role_id)]
+    def build_storyteller_info(self, game_state, actor):
+        if not _is_first_night(game_state):
+            return None
+
+        outsiders = [p for p in game_state.players if p.player_id != actor.player_id and self._is_outsider_role(p.true_role_id or p.role_id)]
         if not outsiders:
             return {"type": "librarian_info", "has_outsider": False}
         
         target_p = random.choice(outsiders)
-        others = [p for p in game_state.players if p.player_id not in (actor.player_id, target_p.player_id)]
-        decoy = random.choice(others) if others else target_p
-        pair = [target_p.player_id, decoy.player_id]
-        random.shuffle(pair)
-        return {"type": "librarian_info", "has_outsider": True, "players": pair, "role_seen": target_p.role_id}
+        pair = _pick_decoy_pair(game_state, actor.player_id, target_p.player_id)
+        return {"type": "librarian_info", "has_outsider": True, "players": pair, "role_seen": target_p.true_role_id or target_p.role_id}
+
+    def get_night_info(self, game_state, actor):
+        return self.build_storyteller_info(game_state, actor)
 
     def _is_outsider_role(self, role_id):
         from src.engine.roles.base_role import get_role_class
@@ -281,6 +348,9 @@ class LibrarianRole(BaseRole):
 @register_role("investigator")
 class InvestigatorRole(BaseRole):
     """调查员: 你得知两位玩家中有一位是某个特定的爪牙角色"""
+
+    fixed_info_role = True
+    storyteller_info_role = True
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -294,24 +364,27 @@ class InvestigatorRole(BaseRole):
                 trigger=AbilityTrigger.FIRST_NIGHT,
                 action_type=AbilityType.INFO_GATHER,
                 description="你会得知两位玩家中有一位是某个特定的爪牙角色",
-                night_order=34,
+                night_order=36,
             ),
         )
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
         return game_state, []
 
-    def get_night_info(self, game_state, actor):
-        minions = [p for p in game_state.players if p.player_id != actor.player_id and self._is_minion_role(p.role_id)]
+    def build_storyteller_info(self, game_state, actor):
+        if not _is_first_night(game_state):
+            return None
+
+        minions = [p for p in game_state.players if p.player_id != actor.player_id and self._is_minion_role(p.true_role_id or p.role_id)]
         if not minions:
             return None
         
         target_p = random.choice(minions)
-        others = [p for p in game_state.players if p.player_id not in (actor.player_id, target_p.player_id)]
-        decoy = random.choice(others) if others else target_p
-        pair = [target_p.player_id, decoy.player_id]
-        random.shuffle(pair)
-        return {"type": "investigator_info", "players": pair, "role_seen": target_p.role_id}
+        pair = _pick_decoy_pair(game_state, actor.player_id, target_p.player_id)
+        return {"type": "investigator_info", "players": pair, "role_seen": target_p.true_role_id or target_p.role_id}
+
+    def get_night_info(self, game_state, actor):
+        return self.build_storyteller_info(game_state, actor)
 
     def _is_minion_role(self, role_id):
         from src.engine.roles.base_role import get_role_class
@@ -322,6 +395,9 @@ class InvestigatorRole(BaseRole):
 @register_role("fortune_teller")
 class FortuneTellerRole(BaseRole):
     """预言家: 每晚选择两位玩家，得知其中是否有恶魔。此外还会有一位好人玩家被当作恶魔对待"""
+
+    storyteller_info_role = True
+    requires_night_target = True
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -343,15 +419,66 @@ class FortuneTellerRole(BaseRole):
         # 预言家由于选两个，这里 target 可能是逗号分隔或 list
         return game_state, []
 
-    def get_night_info(self, game_state, actor):
+    def build_storyteller_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
         # 注意：预言家通常需要主动选择两个目标。在 Orchestrator 中应先请求 act
-        # 这里为了演示暂用随机或模拟。
-        pass
+        # 这里为了模拟/AI决策，如果 action 中没有提供 target，我们需要通过某种方式获取
+        # 实际全自动化运行时，这部分由 AIAgent.act 返回，Orchestrator 传入 execute_ability
+        # get_night_info 仅用于向玩家展示其获得的结果。
+        
+        # 预言家特定的“宿敌/红鲱鱼”逻辑：在 SETUP 时应已确定一个好人被视为恶魔
+        # 这里动态寻找或从状态中获取。为简单起见，我们假设在 GameState.payload 中存有 fortune_teller_red_herring
+        red_herring_id = game_state.payload.get("fortune_teller_red_herring")
+        
+        # 寻找最近的一次预言家行动事件
+        last_action = None
+        for event in reversed(game_state.event_log):
+            if event.event_type == "night_action_resolved" and event.actor == actor.player_id:
+                last_action = event
+                break
+        
+        if not last_action:
+            return None
+            
+        targets = last_action.payload.get("targets", [])
+        if not targets and last_action.target:
+            targets = [last_action.target]
+        if not targets:
+            return None
+            
+        has_demon = False
+        for t_id in targets:
+            target_p = game_state.get_player(t_id)
+            if not target_p: continue
+            
+            # 检查是否是真实恶魔
+            from src.engine.roles.base_role import get_role_class
+            cls = get_role_class(target_p.true_role_id or target_p.role_id)
+            if cls and (
+                cls.get_definition().role_type == RoleType.DEMON
+                or getattr(cls, "registers_as_evil_for_detection", lambda: False)()
+            ):
+                has_demon = True
+                break
+            
+            # 检查是否是红鲱鱼
+            if t_id == red_herring_id:
+                has_demon = True
+                break
+        
+        return {
+            "type": "fortune_teller_info",
+            "has_demon": has_demon
+        }
+
+    def get_night_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
+        return self.build_storyteller_info(game_state, actor)
 
 
 @register_role("monk")
 class MonkRole(BaseRole):
     """僧侣: 每晚（除了第一夜）选择一名玩家（不能选自己），该玩家今晚免受恶魔侵害"""
+
+    requires_night_target = True
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -370,7 +497,8 @@ class MonkRole(BaseRole):
         )
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
-        if not target: return game_state, []
+        if not target or target == actor.player_id:
+            return game_state, []
         # 添加保护状态
         from src.state.game_state import PlayerStatus
         new_state = game_state
@@ -420,7 +548,7 @@ class RavenkeeperRole(BaseRole):
             phase=GamePhase.NIGHT,
             round_number=game_state.round_number,
             target=actor.player_id,
-            payload={"role_seen": target_p.role_id},
+            payload={"role_seen": target_p.true_role_id or target_p.role_id},
             visibility=Visibility.PRIVATE
         )
         return game_state.with_event(event), [event]
@@ -455,6 +583,23 @@ class VirginRole(BaseRole):
 class SlayerRole(BaseRole):
     """杀手: 每局游戏一次，在白天你可以公开选择一名玩家，如果是恶魔，该玩家死亡"""
 
+    @classmethod
+    def has_used_shot(cls, actor: PlayerState) -> bool:
+        return "slayer_used" in actor.storyteller_notes
+
+    @classmethod
+    def mark_shot_used(cls, game_state: GameState, actor_id: str) -> GameState:
+        actor = game_state.get_player(actor_id)
+        if not actor:
+            return game_state
+        return game_state.with_player_update(
+            actor_id,
+            storyteller_notes=actor.storyteller_notes + ("slayer_used",),
+        )
+
+    def can_act_at_phase(self, game_state: GameState, phase: GamePhase) -> bool:
+        return phase in (GamePhase.DAY_DISCUSSION, GamePhase.NOMINATION, GamePhase.VOTING)
+
     @staticmethod
     def get_definition() -> RoleDefinition:
         return RoleDefinition(
@@ -472,23 +617,40 @@ class SlayerRole(BaseRole):
         )
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
-        if not target: return game_state, []
+        if not target:
+            return game_state, []
+        if self.has_used_shot(actor):
+            raise ValueError("杀手本局已经使用过能力")
         target_p = game_state.get_player(target)
-        if not target_p: return game_state, []
+        if not target_p:
+            return game_state, []
         
         from src.engine.roles.base_role import get_role_class
-        cls = get_role_class(target_p.role_id)
+        cls = get_role_class(target_p.true_role_id or target_p.role_id)
         is_demon = cls and cls.get_definition().role_type == RoleType.DEMON
         
         events = []
-        new_state = game_state
+        new_state = self.mark_shot_used(game_state, actor.player_id)
+        shot_event = GameEvent(
+            event_type="slayer_shot",
+            phase=game_state.phase,
+            round_number=game_state.round_number,
+            actor=actor.player_id,
+            target=target,
+            visibility=Visibility.PUBLIC,
+            payload={"success": is_demon, "used": True}
+        )
+        events.append(shot_event)
+        new_state = new_state.with_event(shot_event)
         if is_demon:
-            new_state = game_state.with_player_update(target, is_alive=False)
+            new_state = new_state.with_player_update(target, is_alive=False)
             death_event = GameEvent(
                 event_type="player_death",
                 phase=game_state.phase,
                 round_number=game_state.round_number,
+                actor=actor.player_id,
                 target=target,
+                visibility=Visibility.PUBLIC,
                 payload={"reason": "slayer_shot"}
             )
             events.append(death_event)
@@ -500,6 +662,10 @@ class SlayerRole(BaseRole):
 @register_role("soldier")
 class SoldierRole(BaseRole):
     """士兵: 你不会死于恶魔之手"""
+
+    @classmethod
+    def is_immune_to_demon(cls, actor: PlayerState | None = None) -> bool:
+        return bool(actor and (actor.true_role_id or actor.role_id) == "soldier")
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -525,6 +691,23 @@ class SoldierRole(BaseRole):
 class MayorRole(BaseRole):
     """市长: 如果白天没有人被处决，你可能被宣布获胜。如果你在晚上被杀，另一名玩家可能替你而死"""
 
+    @classmethod
+    def should_redirect_night_death(cls, game_state: GameState, actor: PlayerState) -> bool:
+        return actor.is_alive and (actor.true_role_id or actor.role_id) == "mayor"
+
+    @classmethod
+    def choose_redirection_target(
+        cls,
+        game_state: GameState,
+        mayor_player_id: str,
+        killer_id: Optional[str] = None,
+    ) -> Optional[str]:
+        for player in game_state.get_alive_players():
+            if player.player_id in {mayor_player_id, killer_id}:
+                continue
+            return player.player_id
+        return None
+
     @staticmethod
     def get_definition() -> RoleDefinition:
         return RoleDefinition(
@@ -536,7 +719,7 @@ class MayorRole(BaseRole):
             ability=Ability(
                 trigger=AbilityTrigger.PASSIVE,
                 action_type=AbilityType.PASSIVE_EFFECT,
-                description="如果你在夜晚被杀，可能会有另一名玩家替你而死。如果白天没人被处决，游戏可能以此结束",
+                description="如果你在夜晚被恶魔杀死，可能会有另一名存活玩家替你而死。",
                 night_order=0,
             ),
         )

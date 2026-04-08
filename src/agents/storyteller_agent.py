@@ -1,100 +1,320 @@
-"""
-说书人代理 (Storyteller Agent)
+"""说书人代理 (Storyteller Agent)。"""
 
-负责游戏的整体引导、信息分发决策（如分配哪两个玩家给洗衣妇）以及阶段叙事。
-"""
+from __future__ import annotations
 
+import json
 import logging
-from typing import Any, Optional
-from src.state.game_state import GameState, GameEvent, GamePhase, Visibility, ChatMessage
+import os
+import random
+from typing import Any
+
 from src.llm.openai_backend import OpenAIBackend
+from src.state.game_state import GamePhase, GameState, RoleType, Team
 
 logger = logging.getLogger(__name__)
+storyteller_logger = logging.getLogger("storyteller")
+
+
+def _ensure_storyteller_log_handler() -> None:
+    abs_path = os.path.abspath("storyteller_run.log")
+    for handler in storyteller_logger.handlers:
+        if isinstance(handler, logging.FileHandler) and os.path.abspath(getattr(handler, "baseFilename", "")) == abs_path:
+            return
+    handler = logging.FileHandler("storyteller_run.log", encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    storyteller_logger.addHandler(handler)
+    storyteller_logger.setLevel(logging.INFO)
+    storyteller_logger.propagate = False
+
+
+_ensure_storyteller_log_handler()
+
 
 class StorytellerAgent:
-    def __init__(self, backend: OpenAIBackend):
+    def __init__(self, backend: OpenAIBackend, mode: str = "auto"):
         self.backend = backend
+        self.mode = mode
         self.name = "Storyteller"
         self.player_id = "storyteller"
+        self.decision_ledger: list[dict[str, Any]] = []
 
-    async def _call_llm(self, system_prompt: str, user_prompt: str) -> str:
-        """封装 LLM 调用"""
-        from src.llm.base_backend import Message
-        try:
-            response = await self.backend.generate(
-                system_prompt=system_prompt,
-                messages=[Message(role="user", content=user_prompt)]
+    def _stringify(self, value: Any) -> str:
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return str(value)
+        return json.dumps(value, ensure_ascii=False, default=str)
+
+    def record_judgement(self, category: str, decision: str, reason: str | None = None, **fields: Any) -> dict[str, Any]:
+        entry = {"category": category, "decision": decision, "reason": reason, **fields}
+        self.decision_ledger.append(entry)
+        bits = [f"decision={decision}"]
+        if reason:
+            bits.append(f"reason={reason}")
+        bits.extend(f"{key}={self._stringify(value)}" for key, value in fields.items() if value is not None)
+        storyteller_logger.info("[judgement][%s] %s", category, " ".join(bits))
+        return entry
+
+    def get_recent_judgements(self, limit: int = 20) -> tuple[dict[str, Any], ...]:
+        return tuple(self.decision_ledger[-limit:])
+
+    def summarize_recent_judgements(self, limit: int = 5) -> list[dict[str, Any]]:
+        summaries: list[dict[str, Any]] = []
+        for entry in self.get_recent_judgements(limit):
+            details = {
+                key: value
+                for key, value in entry.items()
+                if key not in {"category", "decision", "reason"}
+            }
+            summaries.append(
+                {
+                    "category": entry.get("category", ""),
+                    "decision": entry.get("decision", ""),
+                    "reason": entry.get("reason"),
+                    "summary": ", ".join(
+                        f"{key}={self._stringify(value)}" for key, value in details.items()
+                    )
+                    if details
+                    else "no_details",
+                }
             )
-            return response.content or ""
-        except Exception as e:
-            logger.error(f"Storyteller LLM error: {e}")
-            return ""
+        return summaries
 
     async def decide_drunk_role(self, script: Any, in_play_roles: list[str]) -> str:
-        """为酒鬼决定一个假身份"""
         from src.engine.roles.base_role import get_role_class
-        from src.state.game_state import RoleType
-        
-        townsfolk_pool = [r for r in script.roles if get_role_class(r).get_definition().role_type == RoleType.TOWNSFOLK and r not in in_play_roles]
-        if not townsfolk_pool:
-            return "washerwoman"
-            
-        prompt = f"""当前游戏在场角色: {', '.join(in_play_roles)}
-候选的村民角色 (不在场): {', '.join(townsfolk_pool)}
 
-请作为说书人，为“酒鬼”选择一个最能干扰正义阵营、平衡游戏局势的伪装身份。
-直接返回角色 ID，不要有任何多余文字。"""
-        
-        res = await self._call_llm("你是一位精通血染钟楼平衡性的说书人。", prompt)
-        res = res.strip().lower()
-        if res in townsfolk_pool:
-            return res
-        return townsfolk_pool[0]
+        townsfolk_pool = [
+            role_id
+            for role_id in script.roles
+            if get_role_class(role_id).get_definition().role_type == RoleType.TOWNSFOLK
+            and role_id not in in_play_roles
+        ]
+        chosen = random.choice(townsfolk_pool) if townsfolk_pool else "washerwoman"
+        storyteller_logger.info(
+            "[decide_drunk_role] candidates=%s chosen=%s",
+            ",".join(townsfolk_pool) if townsfolk_pool else "none",
+            chosen,
+        )
+        self.record_judgement(
+            "drunk_role",
+            decision=chosen,
+            candidates=townsfolk_pool,
+        )
+        return chosen
+
+    async def build_night_order(self, game_state: GameState, phase: GamePhase) -> list[dict]:
+        from src.engine.roles.base_role import get_role_class
+
+        steps: list[dict] = []
+        for player in game_state.get_alive_players():
+            role_id = player.true_role_id or player.role_id
+            role_cls = get_role_class(role_id)
+            if not role_cls:
+                continue
+            role = role_cls()
+            if role.can_act_at_phase(game_state, phase) and self.role_requires_player_choice(role_id):
+                steps.append(
+                    {
+                        "player_id": player.player_id,
+                        "role_id": role_id,
+                        "night_order": role.get_definition().ability.night_order,
+                    }
+                )
+        ordered = sorted(steps, key=lambda item: item["night_order"])
+        storyteller_logger.info(
+            "[build_night_order] phase=%s steps=%s",
+            phase.value,
+            ",".join(f"{step['role_id']}@{step['night_order']}" for step in ordered) if ordered else "none",
+        )
+        self.record_judgement(
+            "night_order",
+            decision="queued" if ordered else "empty",
+            phase=phase.value,
+            steps=ordered,
+        )
+        return ordered
+
+    def role_requires_player_choice(self, role_id: str) -> bool:
+        from src.engine.roles.base_role import get_role_class
+
+        role_cls = get_role_class(role_id)
+        if not role_cls:
+            return False
+        return role_cls.needs_night_target()
+
+    def role_receives_storyteller_info(self, role_id: str) -> bool:
+        from src.engine.roles.base_role import get_role_class
+
+        role_cls = get_role_class(role_id)
+        if not role_cls:
+            return False
+        return role_cls.uses_storyteller_adjudication()
+
+    def _build_base_info(self, game_state: GameState, player_id: str, role_id: str) -> tuple[dict, str]:
+        from src.engine.roles.base_role import get_role_class
+
+        player = game_state.get_player(player_id)
+        if not player:
+            return {}, "missing_player"
+        role_cls = get_role_class(role_id)
+        if not role_cls:
+            return {}, "missing_role"
+        role = role_cls()
+        info = role.build_storyteller_info(game_state, player) or {}
+        if info:
+            return info, "build_storyteller_info"
+        legacy_info = role.get_night_info(game_state, player) or {}
+        if legacy_info:
+            return legacy_info, "legacy_get_night_info"
+        return {}, "empty"
 
     async def decide_night_info(self, game_state: GameState, player_id: str, role_id: str) -> dict:
-        """为特定角色决策首夜或夜晚信息"""
-        import random
-        players = list(game_state.players)
-        
-        # 基础提示词：让 LLM 决定目标
-        system_prompt = "你是一位血染钟楼说书人，你的目标是通过分发信息来让游戏过程更加精彩和平衡。"
-        
-        if role_id == "washerwoman":
-            # 洗衣妇：选一个村民，再选一个非该村民的人
-            townsfolk = [p for p in players if p.role_id != "drunken" and p.team == "good" and p.player_id != player_id]
-            if not townsfolk: return {}
-            
-            prompt = f"当前玩家列表: {', '.join([f'{p.name}({p.player_id})' for p in players])}。请为洗衣妇({player_id})选择一名村民作为提示目标，以及一名干扰目标。返回 JSON: {{\"target_id\": \"村民ID\", \"other_id\": \"干扰项目ID\"}}"
-            res = await self._call_llm(system_prompt, prompt)
-            try:
-                import json
-                data = json.loads(res.replace("```json", "").replace("```", ""))
-                t1 = game_state.get_player(data["target_id"])
-                t2 = game_state.get_player(data["other_id"])
-                if t1 and t2:
-                    return {"targets": [t1.name, t2.name], "role": t1.role_id}
-            except: pass
-            
-            # Fallback
-            target1 = random.choice(townsfolk)
-            others = [p for p in players if p.player_id not in (player_id, target1.player_id)]
-            target2 = random.choice(others) if others else target1
-            return {"targets": [target1.name, target2.name], "role": target1.role_id}
+        player = game_state.get_player(player_id)
+        if not player:
+            return {}
+        if not self.role_receives_storyteller_info(role_id):
+            storyteller_logger.info(
+                "[decide_night_info] player=%s role=%s skipped=no_storyteller_info",
+                player_id,
+                role_id,
+            )
+            self.record_judgement(
+                "night_info",
+                decision="skip",
+                reason="no_storyteller_info",
+                player_id=player_id,
+                role_id=role_id,
+            )
+            return {}
 
-        if role_id == "librarian":
-            # 图书馆员：选一个外来者
-            outsiders = [p for p in players if p.team == "good" and p.player_id != player_id] # 简化
-            # ... 类似逻辑
-            pass
+        info, info_source = self._build_base_info(game_state, player_id, role_id)
+        if not info:
+            storyteller_logger.info(
+                "[decide_night_info] player=%s role=%s skipped=no_info",
+                player_id,
+                role_id,
+            )
+            self.record_judgement(
+                "night_info",
+                decision="skip",
+                reason="no_info",
+                player_id=player_id,
+                role_id=role_id,
+                source=info_source,
+            )
+            return {}
 
-        return {}
+        if player.ability_suppressed:
+            distorted = self._distort_info(game_state, role_id, info)
+            storyteller_logger.info(
+                "[decide_night_info] player=%s role=%s suppressed=true info_type=%s summary=%s",
+                player_id,
+                role_id,
+                distorted.get("type", "unknown"),
+                self._summarize_info(distorted),
+            )
+            self.record_judgement(
+                "night_info",
+                decision="suppressed",
+                player_id=player_id,
+                role_id=role_id,
+                info_type=distorted.get("type", "unknown"),
+                summary=self._summarize_info(distorted),
+                source=info_source,
+            )
+            return distorted
+        storyteller_logger.info(
+            "[decide_night_info] player=%s role=%s suppressed=false info_type=%s summary=%s",
+            player_id,
+            role_id,
+            info.get("type", "unknown"),
+            self._summarize_info(info),
+        )
+        self.record_judgement(
+            "night_info",
+            decision="deliver",
+            player_id=player_id,
+            role_id=role_id,
+            info_type=info.get("type", "unknown"),
+            summary=self._summarize_info(info),
+            source=info_source,
+        )
+        return info
+
+    def _summarize_info(self, info: dict) -> str:
+        if not info:
+            return "empty"
+        summary_bits = []
+        for key in ("type", "title", "role_seen", "pairs", "evil_count", "has_demon"):
+            if key in info:
+                summary_bits.append(f"{key}={info[key]}")
+        if "players" in info and isinstance(info["players"], list):
+            summary_bits.append(f"players={len(info['players'])}")
+        if "teammates" in info and isinstance(info["teammates"], list):
+            summary_bits.append(f"teammates={len(info['teammates'])}")
+        return ", ".join(summary_bits) if summary_bits else "details_present"
+
+    def _distort_info(self, game_state: GameState, role_id: str, info: dict) -> dict:
+        distorted = dict(info)
+        players = [p.player_id for p in game_state.players]
+        if role_id in {"washerwoman", "librarian", "investigator"}:
+            candidate_ids = [pid for pid in players if pid != distorted.get("player_id")]
+            random.shuffle(candidate_ids)
+            distorted["players"] = candidate_ids[:2]
+        elif role_id == "chef":
+            distorted["pairs"] = max(0, min(game_state.alive_count, distorted.get("pairs", 0) + 1))
+        elif role_id == "empath":
+            distorted["evil_count"] = 1 if distorted.get("evil_count", 0) == 0 else 0
+        elif role_id == "undertaker":
+            distorted["role_seen"] = random.choice([p.true_role_id or p.role_id for p in game_state.players])
+        elif role_id == "fortune_teller":
+            distorted["has_demon"] = not distorted.get("has_demon", False)
+        return distorted
 
     async def narrate_phase(self, game_state: GameState) -> str:
-        """为阶段切换提供叙事文本"""
-        phase = game_state.phase
-        day = game_state.day_number
-        
-        prompt = f"当前是血染钟楼游戏的 {phase.value} 阶段（第 {day} 天）。请作为说书人提供一段简短、神秘且有氛围感的开场白（中文，20-50字）。"
-        
-        res = await self._call_llm("你是一位充满神秘感的血染钟楼说书人。", prompt)
-        return res if res else f"现在进入 {phase.value} 阶段。"
+        phase_names = {
+            GamePhase.SETUP: "小镇尚未苏醒，命运正在分配身份。",
+            GamePhase.FIRST_NIGHT: "夜幕初降，每双闭上的眼睛都藏着秘密。",
+            GamePhase.DAY_DISCUSSION: "晨雾散开，谎言与真相同时开口。",
+            GamePhase.NOMINATION: "怀疑开始聚焦，绞索在空气里慢慢收紧。",
+            GamePhase.VOTING: "请注视彼此，举手将决定谁走上断头台。",
+            GamePhase.EXECUTION: "裁决即将落下，小镇将为今天的选择付出代价。",
+            GamePhase.NIGHT: "夜色再次降临，真正的行动在黑暗里发生。",
+            GamePhase.GAME_OVER: "故事落幕，所有隐藏的名字都将被翻开。",
+        }
+        narration = phase_names.get(game_state.phase, f"现在进入 {game_state.phase.value} 阶段。")
+        storyteller_logger.info(
+            "[narrate_phase] phase=%s narration=%s",
+            game_state.phase.value,
+            narration,
+        )
+        self.record_judgement(
+            "narration",
+            decision="announce",
+            phase=game_state.phase.value,
+            narration=narration,
+        )
+        return narration
+
+    async def get_human_storyteller_step(self, game_state: GameState, phase: GamePhase) -> dict:
+        order = await self.build_night_order(game_state, phase)
+        step = {
+            "mode": self.mode,
+            "phase": phase.value,
+            "pending_steps": order,
+            "next_step": order[0] if order else None,
+            "recent_judgements": self.summarize_recent_judgements(),
+        }
+        storyteller_logger.info(
+            "[get_human_storyteller_step] phase=%s next_step=%s pending=%s",
+            phase.value,
+            step["next_step"]["role_id"] if step["next_step"] else "none",
+            len(order),
+        )
+        self.record_judgement(
+            "human_step",
+            decision="report",
+            phase=phase.value,
+            pending=len(order),
+            next_step=step["next_step"]["role_id"] if step["next_step"] else None,
+            summary_count=len(step["recent_judgements"]),
+        )
+        return step

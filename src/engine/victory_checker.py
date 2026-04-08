@@ -30,7 +30,7 @@ class VictoryChecker:
         
         # 1. 如果恶魔死亡，善良阵营获胜
         # （假设这里没有"镇长"等特殊角色导致恶魔死后游戏继续的规则，先以核心规则为主）
-        demons = [p for p in game_state.players if p.role_id in _get_demon_role_ids()]
+        demons = [p for p in game_state.players if (p.true_role_id or p.role_id) in _get_demon_role_ids()]
         alive_demons = [d for d in demons if d.is_alive]
         
         if not alive_demons and demons:

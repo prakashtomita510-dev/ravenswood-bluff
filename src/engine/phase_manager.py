@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 
 # 合法的阶段转移表
 VALID_TRANSITIONS: dict[GamePhase, list[GamePhase]] = {
-    GamePhase.SETUP: [GamePhase.SETUP, GamePhase.FIRST_NIGHT],
+    GamePhase.SETUP: [GamePhase.SETUP, GamePhase.FIRST_NIGHT, GamePhase.GAME_OVER],
     GamePhase.FIRST_NIGHT: [GamePhase.DAY_DISCUSSION],
-    GamePhase.DAY_DISCUSSION: [GamePhase.NOMINATION, GamePhase.NIGHT, GamePhase.GAME_OVER],
-    GamePhase.NOMINATION: [GamePhase.VOTING, GamePhase.NIGHT, GamePhase.DAY_DISCUSSION],
-    GamePhase.VOTING: [GamePhase.EXECUTION, GamePhase.NOMINATION, GamePhase.NIGHT, GamePhase.DAY_DISCUSSION],
-    GamePhase.EXECUTION: [GamePhase.NIGHT, GamePhase.DAY_DISCUSSION, GamePhase.GAME_OVER],
+    GamePhase.DAY_DISCUSSION: [GamePhase.NOMINATION, GamePhase.GAME_OVER],
+    GamePhase.NOMINATION: [GamePhase.VOTING, GamePhase.EXECUTION, GamePhase.NIGHT, GamePhase.GAME_OVER],
+    GamePhase.VOTING: [GamePhase.NOMINATION, GamePhase.EXECUTION, GamePhase.GAME_OVER],
+    GamePhase.EXECUTION: [GamePhase.NIGHT, GamePhase.GAME_OVER],
     GamePhase.NIGHT: [GamePhase.DAY_DISCUSSION, GamePhase.GAME_OVER],
     GamePhase.GAME_OVER: [],  # 终态
 }
@@ -118,9 +118,8 @@ class PhaseManager:
         # 更新轮次和天数
         if target == GamePhase.FIRST_NIGHT:
             self._round_number = 1
-        elif target == GamePhase.DAY_DISCUSSION and old_phase in (
-            GamePhase.FIRST_NIGHT, GamePhase.NIGHT,
-        ):
+            self._day_number = 0 # 首夜通常认为是第0天或还没到第1天
+        elif target == GamePhase.DAY_DISCUSSION:
             self._day_number += 1
         elif target == GamePhase.NIGHT:
             self._round_number += 1

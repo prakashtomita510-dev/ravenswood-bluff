@@ -25,6 +25,8 @@ from src.state.game_state import (
 class PoisonerRole(BaseRole):
     """投毒者: 每晚你可以选择一名玩家，他今晚和明天白天可能获得假信息或能力失效"""
 
+    requires_night_target = True
+
     @staticmethod
     def get_definition() -> RoleDefinition:
         return RoleDefinition(
@@ -73,10 +75,8 @@ class PoisonerRole(BaseRole):
             actor=actor.player_id,
             target=target,
             visibility=Visibility.STORYTELLER_ONLY,
+            payload={"effect": "poisoned_until_next_night"},
         )
-        
-        # patch to fix phase
-        event = event.model_copy(update={"phase": game_state.phase})
 
         return new_state.with_event(event), [event]
 
@@ -84,6 +84,9 @@ class PoisonerRole(BaseRole):
 @register_role("spy")
 class SpyRole(BaseRole):
     """间谍: 每晚你可以查看魔法书（所有玩家的角色和阵营）。你可能被当作正义阵营、村民或外来者"""
+
+    fixed_info_role = True
+    storyteller_info_role = True
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -97,24 +100,55 @@ class SpyRole(BaseRole):
                 trigger=AbilityTrigger.EACH_NIGHT,
                 action_type=AbilityType.INFO_GATHER,
                 description="每晚你可以查看魔法书：你会得知所有玩家的角色和阵营。你可能被当作正义阵营、村民或外来者",
-                night_order=60,
+                night_order=70,
             ),
         )
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
         return game_state, []
 
-    def get_night_info(self, game_state, actor):
+    def build_storyteller_info(self, game_state, actor):
         # 间谍能看到全场信息
         book = []
         for p in game_state.players:
-            book.append({"player_id": p.player_id, "name": p.name, "role_id": p.role_id, "team": p.team})
+            book.append(
+                {
+                    "player_id": p.player_id,
+                    "name": p.name,
+                    "role_id": p.true_role_id or p.role_id,
+                    "perceived_role_id": p.perceived_role_id,
+                    "team": (p.current_team or p.team).value,
+                    "is_alive": p.is_alive,
+                }
+            )
         return {"type": "spy_book", "book": book}
+
+    def get_night_info(self, game_state, actor):
+        return self.build_storyteller_info(game_state, actor)
 
 
 @register_role("scarlet_woman")
 class ScarletWomanRole(BaseRole):
     """绯红女郎: 如果恶魔死亡且场上有5名或更多存活玩家，你将成为新的恶魔"""
+
+    @classmethod
+    def can_replace_demon(cls, game_state: GameState) -> bool:
+        """是否满足接管恶魔的基础条件。"""
+        return game_state.alive_count >= 5
+
+    @classmethod
+    def is_eligible_replacement(cls, game_state: GameState, player: PlayerState) -> bool:
+        """是否是当前可接管恶魔的绯红女郎。"""
+        return (
+            player.is_alive
+            and (player.true_role_id or player.role_id) == "scarlet_woman"
+            and cls.can_replace_demon(game_state)
+        )
+
+    @classmethod
+    def should_trigger_on_demon_death(cls, game_state: GameState) -> bool:
+        """恶魔死亡时是否应检查绯红女郎接管。"""
+        return cls.can_replace_demon(game_state)
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -128,7 +162,7 @@ class ScarletWomanRole(BaseRole):
                 trigger=AbilityTrigger.PASSIVE,
                 action_type=AbilityType.PASSIVE_EFFECT,
                 description="如果恶魔死亡且场上有5名或更多存活玩家，你将立即成为新的恶魔",
-                night_order=0,
+                night_order=23,
             ),
         )
 
@@ -140,6 +174,11 @@ class ScarletWomanRole(BaseRole):
 @register_role("baron")
 class BaronRole(BaseRole):
     """男爵: 剧本中会额外多出两名外来者（减少两名村民）"""
+
+    @classmethod
+    def outsider_bonus(cls) -> int:
+        """男爵带来的外来者增量。"""
+        return 2
 
     @staticmethod
     def get_definition() -> RoleDefinition:

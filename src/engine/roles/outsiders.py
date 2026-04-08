@@ -14,17 +14,45 @@ from src.state.game_state import (
     AbilityTrigger,
     AbilityType,
     GameEvent,
+    GamePhase,
     GameState,
     PlayerState,
     RoleDefinition,
     RoleType,
     Team,
+    Visibility,
 )
 
 
 @register_role("butler")
 class ButlerRole(BaseRole):
     """管家: 你每晚选择一名玩家。明天，你只能在他们投票时投票"""
+
+    requires_night_target = True
+
+    @classmethod
+    def binding_payload_key(cls) -> str:
+        return "butler_bindings"
+
+    @classmethod
+    def set_binding(cls, game_state: GameState, butler_id: str, target_id: str) -> GameState:
+        bindings = dict(game_state.payload.get(cls.binding_payload_key(), {}))
+        bindings[butler_id] = {
+            "target_id": target_id,
+            "applies_on_day": game_state.day_number + 1,
+        }
+        payload = dict(game_state.payload)
+        payload[cls.binding_payload_key()] = bindings
+        return game_state.with_update(payload=payload)
+
+    @classmethod
+    def get_active_binding(cls, game_state: GameState, butler_id: str) -> Optional[dict[str, Any]]:
+        binding = game_state.payload.get(cls.binding_payload_key(), {}).get(butler_id)
+        if not binding:
+            return None
+        if binding.get("applies_on_day") != game_state.day_number:
+            return None
+        return binding
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -43,13 +71,33 @@ class ButlerRole(BaseRole):
         )
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
-        # 记录追踪的目标，在投票逻辑中校验
-        return game_state, []
+        if not target:
+            raise ValueError("管家必须选择一名玩家")
+        target_player = game_state.get_player(target)
+        if not target_player:
+            raise ValueError("目标不存在")
+
+        new_state = self.set_binding(game_state, actor.player_id, target)
+        event = GameEvent(
+            event_type="butler_binding",
+            phase=game_state.phase,
+            round_number=game_state.round_number,
+            actor=actor.player_id,
+            target=target,
+            visibility=Visibility.STORYTELLER_ONLY,
+            payload={
+                "target_id": target,
+                "applies_on_day": game_state.day_number + 1,
+            },
+        )
+        return new_state.with_event(event), [event]
 
 
 @register_role("drunken")
 class DrunkenRole(BaseRole):
     """酒鬼: 你以为你是某个村民，但其实你是个酒鬼（能力失效且会得到错误信息）"""
+
+    fixed_info_role = False
 
     @staticmethod
     def get_definition() -> RoleDefinition:
@@ -59,6 +107,7 @@ class DrunkenRole(BaseRole):
             name_en="Drunken",
             team=Team.GOOD,
             role_type=RoleType.OUTSIDER,
+            drunk_behavior="false_info",
             ability=Ability(
                 trigger=AbilityTrigger.PASSIVE,
                 action_type=AbilityType.PASSIVE_EFFECT,
@@ -66,6 +115,10 @@ class DrunkenRole(BaseRole):
                 night_order=0,
             ),
         )
+
+    @classmethod
+    def should_receive_false_info(cls) -> bool:
+        return True
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
         return game_state, []
@@ -75,6 +128,8 @@ class DrunkenRole(BaseRole):
 class RecluseRole(BaseRole):
     """隐士: 你可能被当作邪恶阵营、爪牙或恶魔"""
 
+    fixed_info_role = False
+
     @staticmethod
     def get_definition() -> RoleDefinition:
         return RoleDefinition(
@@ -83,6 +138,7 @@ class RecluseRole(BaseRole):
             name_en="Recluse",
             team=Team.GOOD,
             role_type=RoleType.OUTSIDER,
+            drunk_behavior="misread_as_evil",
             ability=Ability(
                 trigger=AbilityTrigger.PASSIVE,
                 action_type=AbilityType.PASSIVE_EFFECT,
@@ -90,6 +146,18 @@ class RecluseRole(BaseRole):
                 night_order=0,
             ),
         )
+
+    @classmethod
+    def can_be_misread_as_evil(cls) -> bool:
+        return True
+
+    @classmethod
+    def registers_as_evil_for_detection(cls) -> bool:
+        return True
+
+    @classmethod
+    def misread_as_role_types(cls) -> tuple[str, ...]:
+        return ("evil", "minion", "demon")
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
         return game_state, []

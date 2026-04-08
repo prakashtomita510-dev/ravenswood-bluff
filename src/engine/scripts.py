@@ -82,8 +82,10 @@ def distribute_roles(script: ScriptConfig, player_count: int) -> tuple[list[str]
     
     # 特殊逻辑：男爵 (Baron)
     if "baron" in selected:
-        counts["townsfolk"] -= 2
-        counts["outsider"] += 2
+        baron_cls = get_role_class("baron")
+        outsider_bonus = baron_cls.outsider_bonus() if baron_cls else 2
+        counts["townsfolk"] -= outsider_bonus
+        counts["outsider"] += outsider_bonus
         
     selected.extend(random.sample(pools[RoleType.OUTSIDER], min(counts["outsider"], len(pools[RoleType.OUTSIDER]))))
     selected.extend(random.sample(pools[RoleType.TOWNSFOLK], min(counts["townsfolk"], len(pools[RoleType.TOWNSFOLK]))))

@@ -3,7 +3,7 @@
 import pytest
 from src.engine.rule_engine import RuleEngine
 from src.engine.nomination import NominationManager
-from src.state.game_state import GamePhase, GameState, PlayerState, Team
+from src.state.game_state import ExecutionCandidate, GamePhase, GameState, PlayerState, Team
 
 
 def make_test_state(phase: GamePhase = GamePhase.NOMINATION, **kwargs) -> GameState:
@@ -67,7 +67,7 @@ class TestNominationManager:
         assert new_state.current_nominee == "p2"
         assert "p1" in new_state.nominations_today
         assert len(events) == 1
-        assert events[0].event_type == "nomination"
+        assert events[0].event_type == "nomination_started"
 
     def test_nominate_fail(self):
         state = make_test_state(phase=GamePhase.DAY_DISCUSSION)
@@ -82,19 +82,38 @@ class TestNominationManager:
         assert len(events) == 1
 
     def test_resolve_voting_passed(self):
-        # 4人局，存活2人，需要1票过半 (2//2=1)。死人p3投票。
-        state = make_test_state(phase=GamePhase.VOTING, current_nominee="p2", votes_today={"p3": True})
+        # 存活 2 人时需要 2 票严格过半；死人 p3 + 活人 p1 共同投票。
+        state = make_test_state(phase=GamePhase.VOTING, current_nominee="p2", votes_today={"p3": True, "p1": True})
         new_state, events = NominationManager.resolve_voting_round(state)
         
-        assert new_state.phase == GamePhase.DAY_DISCUSSION
+        assert new_state.phase == GamePhase.NOMINATION
         assert new_state.current_nominee is None
         
         ev = events[0]
-        assert ev.event_type == "voting_result"
+        assert ev.event_type == "voting_resolved"
         assert ev.payload["passed"] is True
-        assert ev.payload["yes_votes"] == 1
+        assert ev.payload["votes"] == 2
         
         # 验证p3的死人票被扣除
         p3_new = new_state.get_player("p3")
         assert p3_new.has_used_dead_vote is True
         assert p3_new.ghost_votes_remaining == 0
+
+    def test_finalize_execution_saint_triggers_evil_win(self):
+        state = make_test_state(
+            phase=GamePhase.NOMINATION,
+            players=(
+                PlayerState(player_id="p1", name="A", role_id="washerwoman", team=Team.GOOD),
+                PlayerState(player_id="p2", name="B", role_id="saint", team=Team.GOOD),
+                PlayerState(player_id="p3", name="C", role_id="imp", team=Team.EVIL),
+            ),
+            execution_candidates=(),
+        )
+        state = state.with_update(
+            execution_candidates=(
+                ExecutionCandidate(nominee_id="p2", votes=2, nominator_id="p1", passed=True),
+            )
+        )
+        new_state, events = NominationManager.finalize_execution(state)
+        assert new_state.winning_team == Team.EVIL
+        assert events[0].payload["saint_triggered"] is True

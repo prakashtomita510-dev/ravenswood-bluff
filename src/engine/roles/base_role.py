@@ -62,6 +62,9 @@ class BaseRole(ABC):
     """
 
     _role_id: str = ""
+    fixed_info_role: bool = False
+    storyteller_info_role: bool = False
+    requires_night_target: bool = False
 
     @staticmethod
     @abstractmethod
@@ -98,6 +101,10 @@ class BaseRole(ABC):
         definition = self.get_definition()
         if not definition.ability:
             return False
+
+        # 固定信息角色不进入通用 night_action 请求链。
+        if definition.ability.action_type == AbilityType.INFO_GATHER and self.is_fixed_info_role():
+            return False
         
         trigger = definition.ability.trigger
         
@@ -105,12 +112,41 @@ class BaseRole(ABC):
             return trigger in (AbilityTrigger.FIRST_NIGHT, AbilityTrigger.EACH_NIGHT)
         
         if phase == GamePhase.NIGHT:
-            # 除第一夜外的夜晚
+            # 除首夜(Round 1, Day 0)外的夜晚 (通常是 Round 2, Day 1 及以后)
+            # 或者是针对 EACH_NIGHT_EXCEPT_FIRST 触发器
             if game_state.round_number > 1:
                 return trigger in (AbilityTrigger.EACH_NIGHT, AbilityTrigger.EACH_NIGHT_EXCEPT_FIRST)
+            # 首个夜晚(Round 1)已经用 FIRST_NIGHT 覆盖了，NIGHT 里的 EACH_NIGHT 也应在后续生效
             return trigger == AbilityTrigger.EACH_NIGHT
             
         return False
+
+    @classmethod
+    def is_fixed_info_role(cls) -> bool:
+        """是否应由说书人直接发放固定信息，而不是请求玩家选择行动。"""
+        return bool(getattr(cls, "fixed_info_role", False))
+
+    @classmethod
+    def needs_night_target(cls) -> bool:
+        """是否需要在夜晚让玩家选择目标。"""
+        return bool(getattr(cls, "requires_night_target", False))
+
+    @classmethod
+    def uses_storyteller_adjudication(cls) -> bool:
+        """是否由说书人裁定并发放信息。"""
+        return bool(getattr(cls, "storyteller_info_role", False))
+
+    def build_storyteller_info(
+        self,
+        game_state: GameState,
+        actor: PlayerState,
+    ) -> Optional[dict]:
+        """
+        构建供说书人裁定的原始信息载荷。
+
+        角色实现应返回事实型 payload，而不是最终展示文案。
+        """
+        return None
 
     def get_night_info(
         self,
@@ -118,12 +154,12 @@ class BaseRole(ABC):
         actor: PlayerState,
     ) -> Optional[dict]:
         """
-        获取夜晚信息（对于信息收集型角色）
+        获取夜晚信息（兼容旧接口）。
 
         Returns:
             信息字典，或 None（如果该角色不适用）
         """
-        return None
+        return self.build_storyteller_info(game_state, actor)
 
     @classmethod
     def role_id(cls) -> str:

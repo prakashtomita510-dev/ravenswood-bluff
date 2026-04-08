@@ -17,6 +17,7 @@ from src.state.game_state import (
     ScriptConfig,
     Team,
     Visibility,
+    PrivatePlayerView,
 )
 
 
@@ -36,6 +37,8 @@ class TestPlayerState:
         assert player.name == "张三"
         assert player.is_alive is True
         assert player.can_vote is True
+        assert player.true_role_id == "washerwoman"
+        assert player.perceived_role_id == "washerwoman"
 
     def test_player_immutability(self):
         player = PlayerState(
@@ -236,4 +239,19 @@ class TestGameConfig:
         )
         assert config.player_count == 7
         assert config.storyteller_mode == "auto"
+        assert config.script is not None
         assert len(config.script.roles) == 3
+
+
+class TestPrivatePlayerView:
+    def test_private_view_shape(self):
+        view = PrivatePlayerView(
+            player_id="p1",
+            name="张三",
+            true_role_id="drunken",
+            perceived_role_id="washerwoman",
+            current_team=Team.GOOD,
+            is_drunk=True,
+        )
+        assert view.true_role_id == "drunken"
+        assert view.perceived_role_id == "washerwoman"

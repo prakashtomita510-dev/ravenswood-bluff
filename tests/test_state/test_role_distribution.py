@@ -6,8 +6,9 @@ from src.state.game_state import RoleType
 def test_distribution_counts():
     # Test for various player counts
     for count in range(5, 16):
-        roles = distribute_roles(TROUBLE_BREWING, count)
+        roles, bluffs = distribute_roles(TROUBLE_BREWING, count)
         assert len(roles) == count
+        assert len(bluffs) <= 3
         
         # Count types
         counts = {RoleType.TOWNSFOLK: 0, RoleType.OUTSIDER: 0, RoleType.MINION: 0, RoleType.DEMON: 0}
@@ -33,7 +34,7 @@ def test_baron_effect():
     # Force Baron to be in play if possible
     # We'll just run distribution multiple times until Baron appears or check the logic
     for _ in range(100):
-        roles = distribute_roles(TROUBLE_BREWING, 7)
+        roles, _ = distribute_roles(TROUBLE_BREWING, 7)
         if "baron" in roles:
             counts = {RoleType.TOWNSFOLK: 0, RoleType.OUTSIDER: 0, RoleType.MINION: 0, RoleType.DEMON: 0}
             for rid in roles:

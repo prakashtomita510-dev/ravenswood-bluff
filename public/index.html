@@ -80,6 +80,101 @@
             background: radial-gradient(circle at center, #1e1e1e 0%, #121212 100%);
         }
 
+        .view-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .view-tab {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: var(--text);
+            min-width: 110px;
+        }
+
+        .view-tab.active {
+            background: rgba(187, 134, 252, 0.18);
+            border-color: rgba(187, 134, 252, 0.45);
+            color: #fff;
+        }
+
+        .content-view {
+            display: none;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .content-view.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .status-panels {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 14px;
+            height: 100%;
+            min-height: 0;
+        }
+
+        .status-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 14px 16px;
+        }
+
+        .status-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 1rem;
+            color: var(--secondary);
+        }
+
+        .status-subtitle {
+            font-size: 0.82rem;
+            opacity: 0.8;
+            margin-bottom: 8px;
+        }
+
+        .status-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .status-pill {
+            background: rgba(187, 134, 252, 0.12);
+            border: 1px solid rgba(187, 134, 252, 0.35);
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            color: var(--primary);
+        }
+
+        .private-info-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: none;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        .private-info-entry {
+            background: rgba(255,255,255,0.03);
+            border-left: 3px solid var(--accent);
+            border-radius: 10px;
+            padding: 10px 12px;
+        }
+
+        .private-info-entry strong {
+            display: block;
+            margin-bottom: 6px;
+            color: #fff;
+        }
+
         #logBox {
             flex: 1;
             overflow-y: auto;
@@ -182,16 +277,79 @@
 
         .grimoire-card {
             background: var(--surface);
-            padding: 15px;
+            padding: 12px;
             border-radius: 12px;
             border-left: 4px solid var(--primary);
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            font-size: 0.9rem;
+            position: relative;
         }
-
+        .grimoire-card strong { font-size: 1.1rem; color: #fff; }
+        .grimoire-card .role-name { color: var(--primary); font-weight: bold; }
+        .grimoire-card .status-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+        .badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        .badge-poison { background: var(--accent); color: #000; }
+        .badge-drunk { background: var(--secondary); color: #000; }
+        .badge-dead { background: #666; color: #fff; }
         .grimoire-card.evil { border-left-color: var(--error); background: rgba(207, 102, 121, 0.05); }
         .grimoire-card.good { border-left-color: var(--secondary); background: rgba(3, 218, 198, 0.05); }
 
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        .nomination-details { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+        .nomination-detail { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; }
+        .nomination-detail strong { display: block; margin-bottom: 6px; color: var(--secondary); }
+        .nomination-detail .detail-muted { opacity: 0.72; }
+        .nomination-timeline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+        .timeline-step {
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.03);
+            padding: 10px 8px;
+            text-align: center;
+            font-size: 0.78rem;
+            opacity: 0.6;
+        }
+        .timeline-step.active {
+            border-color: var(--accent);
+            background: rgba(255, 2, 102, 0.12);
+            color: #fff;
+            opacity: 1;
+        }
+        .timeline-step.done {
+            border-color: var(--secondary);
+            background: rgba(3, 218, 198, 0.12);
+            opacity: 0.95;
+        }
+        .alive-roster {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .alive-chip {
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.04);
+            padding: 6px 10px;
+            font-size: 0.78rem;
+        }
+        .alive-chip.nominator {
+            border-color: var(--secondary);
+            color: var(--secondary);
+        }
+        .alive-chip.nominee {
+            border-color: var(--error);
+            color: var(--error);
+        }
+
+        .status-card-fill {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
     </style>
 </head>
 <body>
@@ -202,6 +360,7 @@
         </div>
         <div style="display: flex; gap: 10px; align-items: center;">
             <button id="grimoireBtn" onclick="toggleGrimoire()" style="background: var(--surface); color: var(--secondary); min-width: 60px; padding: 5px; display: none;">Grimoire</button>
+            <button id="rulesBtn" onclick="toggleRules()" style="background: var(--surface); color: var(--accent); min-width: 60px; padding: 5px;">Rules</button>
             <button id="langToggle" onclick="toggleLanguage()" style="background: var(--surface); color: white; min-width: 60px; padding: 5px;">CN/EN</button>
             <span id="current-phase-display" class="phase-indicator">SETUP</span>
             <input type="text" id="playerId" value="h1" style="width: 40px; padding: 5px;">
@@ -216,8 +375,33 @@
         </div>
 
         <div class="chat-container">
-            <div id="logBox">
-                <div class="msg-bubble system-msg" id="ui-welcome">Please connect to the server to start.</div>
+            <div class="view-tabs">
+                <button id="chatViewTab" class="view-tab active" onclick="switchMainView('chat')">聊天室</button>
+                <button id="statusViewTab" class="view-tab" onclick="switchMainView('status')">状态页</button>
+            </div>
+            <div id="chatView" class="content-view active">
+                <div id="logBox">
+                    <div class="msg-bubble system-msg" id="ui-welcome">Please connect to the server to start.</div>
+                </div>
+            </div>
+            <div id="statusView" class="content-view">
+                <div class="status-panels">
+                <div class="status-card status-card-fill">
+                    <h3 id="ui-nomination-card-title">提名状态</h3>
+                    <div id="nominationStateText">当前还没有提名。</div>
+                    <div id="nominationAliveSubtitle" class="status-subtitle">当前存活玩家</div>
+                    <div id="nominationAlivePlayers" class="alive-roster"></div>
+                    <div id="nominationMeta" class="status-meta"></div>
+                    <div id="nominationTimeline" class="nomination-timeline"></div>
+                    <div id="nominationDetails" class="nomination-details"></div>
+                </div>
+                <div class="status-card status-card-fill">
+                    <h3 id="ui-private-info-title">私密信息</h3>
+                    <div id="privateInfoList" class="private-info-list">
+                        <div style="opacity: 0.7;">当前没有新的私密信息。</div>
+                    </div>
+                </div>
+            </div>
             </div>
         </div>
     </main>
@@ -242,24 +426,52 @@
         </div>
     </div>
 
-    <!-- Setup Overlay -->
     <div id="setupOverlay" class="overlay">
-        <div class="modal">
+        <div class="modal" id="setupStep1">
             <h2 id="ui-setup-title">Game Setup</h2>
             <p id="ui-setup-desc">Select the number of players (5-15)</p>
             <input type="number" id="playerCountInput" value="8" min="5" max="15" style="width: 100px; text-align: center; font-size: 1.5rem; margin-bottom: 20px;">
-            <div style="margin-bottom: 20px; display: flex; justify-content: center; gap: 20px;">
-                <label><input type="radio" name="playMode" value="participate" checked> <span id="ui-mode-play">Participate</span></label>
-                <label><input type="radio" name="playMode" value="observe"> <span id="ui-mode-observe">Observe</span></label>
+            <button onclick="nextSetupStep()" style="width: 100%;">Next</button>
+        </div>
+        <div class="modal" id="setupStep2" style="display: none;">
+            <h2 id="ui-mode-choice">Choose Your Role</h2>
+            <div style="margin-bottom: 20px; display: flex; flex-direction: column; gap: 15px;">
+                <button onclick="submitSetup('participate')" style="background: var(--primary);">Participate as Player</button>
+                <button onclick="submitSetup('observe')" style="background: var(--secondary);">Observe as Storyteller</button>
             </div>
-            <button id="startGameBtn" onclick="submitSetup()" style="width: 100%;">Start Game</button>
+            <button onclick="prevSetupStep()" id="setupBackBtn" style="font-size: 0.8rem; background: none; color: #888;">Back</button>
+        </div>
+        <div class="modal" id="setupStepReconnect" style="display: none;">
+            <h2 id="ui-reconnect-title">Game in Progress</h2>
+            <p id="ui-reconnect-desc">An ongoing game sessions was found.</p>
+            <div style="margin-bottom: 20px; display: flex; flex-direction: column; gap: 15px;">
+                <button onclick="closeSetup()" style="background: var(--primary);">Continue Current Game</button>
+                <button onclick="restartSetup()" style="background: var(--error);">Reset & Start New</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instructions Overlay -->
+    <div id="rulesOverlay" class="overlay">
+        <div class="modal modal-large">
+            <h2 id="ui-rules-title">Game Manual</h2>
+            <div class="tabs" style="display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid #444; padding-bottom: 10px;">
+                <button onclick="showRuleTab('roles')" class="tab-btn active">Roles</button>
+                <button onclick="showRuleTab('setup')" class="tab-btn">Setup Table</button>
+                <button onclick="showRuleTab('flow')" class="tab-btn">Game Flow</button>
+            </div>
+            <div id="rulesContent" style="max-height: 400px; overflow-y: auto; text-align: left;"></div>
+            <button onclick="toggleRules()" style="margin-top: 20px; width: 100%;">Close</button>
         </div>
     </div>
 
     <!-- Grimoire Overlay -->
     <div id="grimoireOverlay" class="overlay" onclick="toggleGrimoire()">
         <div class="modal modal-large" onclick="event.stopPropagation()">
-            <h2 id="ui-grimoire-title">Storyteller's Grimoire</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h2 id="ui-grimoire-title">Storyteller's Grimoire</h2>
+                <button onclick="confirmReset()" style="background: var(--error); font-size: 0.8rem; padding: 5px 10px;">RESET GAME</button>
+            </div>
             <div id="grimoireContent" class="grimoire-grid"></div>
             <button onclick="toggleGrimoire()" style="margin-top: 30px; width: 100%;">Close</button>
         </div>
@@ -267,11 +479,40 @@
 
     <script>
         let ws = null;
+        let pollHandle = null;
         let pendingActionType = null;
         let players = [];
         let currentLang = 'zh';
         let currentUserId = 'h1';
-        let gameState = { phase: 'setup', day_number: 0, is_observer: false };
+        let roleCatalog = {};
+        let lastRenderedDayNumber = null;
+        let nominationPromptKey = null;
+        let cachedNominationState = null;
+        const MAIN_VIEW_STORAGE_KEY = 'botc.activeMainView';
+        function readMainViewPreference() {
+            try {
+                return localStorage.getItem(MAIN_VIEW_STORAGE_KEY) === 'status' ? 'status' : 'chat';
+            } catch (e) {
+                return 'chat';
+            }
+        }
+        function persistMainViewPreference(view) {
+            try {
+                localStorage.setItem(MAIN_VIEW_STORAGE_KEY, view === 'status' ? 'status' : 'chat');
+            } catch (e) {}
+        }
+        let activeMainView = readMainViewPreference();
+        let statusAttention = false;
+        let gameState = {
+            phase: 'setup',
+            day_number: 0,
+            viewer_mode: 'observer',
+            human_mode: 'none',
+            can_view_grimoire: false,
+            nomination_state: { stage: 'idle' },
+            private_info: [],
+            players: []
+        };
 
         const translations = {
             zh: {
@@ -287,7 +528,7 @@
                 end_discussion: "结束讨论",
                 submit_action: "提交行动",
                 content_placeholder: "输入内容...",
-                action_required: "需要行动: ",
+                action_required: "需要行动: {type}",
                 phase_setup: "准备阶段",
                 phase_first_night: "首夜",
                 phase_day_discussion: "白天讨论",
@@ -314,6 +555,53 @@
                 evil_chat: "【邪恶频道】",
                 evil_chat_label: "邪恶频道",
                 chat_btn: "发送消息",
+                chat_view: "聊天室",
+                status_view: "状态页",
+                rules_btn: "游戏规则",
+                rules_title: "游戏手册",
+                tab_roles: "角色能力",
+                tab_setup: "人数配置",
+                tab_flow: "游戏流程",
+                reset_confirm: "确定要重置当前游戏吗？所有进度将丢失。",
+                reconnect_title: "游戏进行中",
+                reconnect_desc: "检测到当前已有正在进行的游戏会话。",
+                btn_continue: "继续当前游戏",
+                btn_reset: "重置并开始新游戏",
+                nominate_title: "提名对决",
+                nominate_desc: "{nominator} 提名了 {nominee}",
+                vote_count_text: "{current} / {threshold} 票 (存活: {alive})",
+                execution_result: "最终判决: {target} 被处决!",
+                no_execution: "最终判决: 今日无人被处决。",
+                defense_prefix: "辩解: ",
+                nomination_card_title: "提名状态",
+                nomination_none: "当前还没有提名。",
+                nomination_open: "提名窗口已开启，你现在可以决定是否提名。",
+                nomination_stage_nomination: "正在收集提名意图",
+                nomination_stage_defense: "被提名者正在辩解",
+                nomination_stage_voting: "所有玩家正在投票",
+                nomination_stage_resolved: "本轮投票已结算",
+                nomination_stage_executed: "今日处决结果已确定",
+                nomination_stage_no_nomination: "今天无人发起合法提名。",
+                nomination_alive_players: "当前存活玩家",
+                nomination_step_nomination: "提名",
+                nomination_step_defense: "辩解",
+                nomination_step_voting: "投票",
+                nomination_step_result: "结果",
+                private_info_title: "私密信息",
+                private_info_empty: "当前没有新的私密信息。",
+                private_info_received: "你收到了一条私密信息：{title}",
+                defense_prompt: "你被提名了，请进行辩解。",
+                nominate_prompt: "提名窗口已开启，请选择是否提名。",
+                vote_cast: "一张投票已提交。",
+                voting_resolved: "本轮投票已经结算。",
+                current_nominator: "提名者",
+                current_nominee: "被提名者",
+                current_votes: "当前票数",
+                nomination_round: "提名轮次",
+                nomination_defense: "辩解内容",
+                nomination_voters: "已投票玩家",
+                nomination_result: "最终结果",
+                chat_locked: "当前不是邪恶私聊时间，消息将作为公共发言发送。",
                 // 角色翻译
                 role_washerwoman: "洗衣妇", role_librarian: "图书馆员", role_investigator: "调查员", role_chef: "厨师", role_empath: "共情者",
                 role_fortune_teller: "占卜师", role_undertaker: "送葬者", role_monk: "僧侣", role_ravenkeeper: "守鸦人",
@@ -335,7 +623,7 @@
                 end_discussion: "End Discussion",
                 submit_action: "Submit Action",
                 content_placeholder: "Type something...",
-                action_required: "Action Required: ",
+                action_required: "Action Required: {type}",
                 phase_setup: "SETUP",
                 phase_first_night: "FIRST NIGHT",
                 phase_day_discussion: "DISCUSSION",
@@ -362,6 +650,53 @@
                 evil_chat: "[Evil Channel]",
                 evil_chat_label: "Evil Chat",
                 chat_btn: "Chat",
+                chat_view: "Chat",
+                status_view: "Status",
+                rules_btn: "Rules",
+                rules_title: "Game Manual",
+                tab_roles: "Roles",
+                tab_setup: "Setup Table",
+                tab_flow: "Flow",
+                reset_confirm: "Are you sure to reset the game? All progress will be lost.",
+                reconnect_title: "Game in Progress",
+                reconnect_desc: "An ongoing game session was found.",
+                btn_continue: "Continue Current Game",
+                btn_reset: "Reset & Start New",
+                nominate_title: "提名对决",
+                nominate_desc: "{nominator} 提名了 {nominee}",
+                vote_count_text: "{current} / {threshold} 票 (存活: {alive})",
+                execution_result: "最终判决: {target} 被处决!",
+                no_execution: "最终判决: 今日无人被处决。",
+                defense_prefix: "辩解: ",
+                nomination_card_title: "Nomination Status",
+                nomination_none: "No nomination is active.",
+                nomination_open: "Nomination window is open. Decide whether to nominate.",
+                nomination_stage_nomination: "Collecting nomination intents",
+                nomination_stage_defense: "The nominee is defending",
+                nomination_stage_voting: "Players are voting",
+                nomination_stage_resolved: "The voting round has resolved",
+                nomination_stage_executed: "Execution result has been locked in",
+                nomination_stage_no_nomination: "No legal nomination was made today.",
+                nomination_alive_players: "Alive Players",
+                nomination_step_nomination: "Nominate",
+                nomination_step_defense: "Defense",
+                nomination_step_voting: "Vote",
+                nomination_step_result: "Result",
+                private_info_title: "Private Info",
+                private_info_empty: "No private info yet.",
+                private_info_received: "You received private info: {title}",
+                defense_prompt: "You were nominated. Please make your defense.",
+                nominate_prompt: "Nomination window is open. Choose whether to nominate.",
+                vote_cast: "A vote has been cast.",
+                voting_resolved: "This voting round has been resolved.",
+                current_nominator: "Nominator",
+                current_nominee: "Nominee",
+                current_votes: "Votes",
+                nomination_round: "Nomination Round",
+                nomination_defense: "Defense",
+                nomination_voters: "Voters",
+                nomination_result: "Final Result",
+                chat_locked: "Private evil chat is closed. Your message will be public.",
                 // Roles
                 role_washerwoman: "Washerwoman", role_librarian: "Librarian", role_investigator: "Investigator", role_chef: "Chef", role_empath: "Empath",
                 role_fortune_teller: "Fortune Teller", role_undertaker: "Undertaker", role_monk: "Monk", role_ravenkeeper: "Ravenkeeper",
@@ -380,9 +715,49 @@
             return text;
         }
 
+        function roleName(roleId) {
+            if (!roleId) return '';
+            return roleCatalog[roleId]?.name || t('role_' + roleId) || roleId;
+        }
+
+        function playerName(playerId) {
+            return players.find((player) => player.player_id === playerId)?.name || playerId || '-';
+        }
+
+        function nominationStageText(stage) {
+            const mapping = {
+                idle: t('nomination_none'),
+                window_open: t('nomination_open'),
+                nomination: t('nomination_stage_nomination'),
+                defense: t('nomination_stage_defense'),
+                voting: t('nomination_stage_voting'),
+                resolved: t('nomination_stage_resolved'),
+                executed: t('nomination_stage_executed'),
+                no_nomination: t('nomination_stage_no_nomination'),
+                invalid_nomination: t('nomination_stage_nomination'),
+            };
+            return mapping[stage] || stage || t('nomination_none');
+        }
+
         function toggleLanguage() {
             currentLang = currentLang === 'zh' ? 'en' : 'zh';
             updateUIStrings();
+        }
+
+        function switchMainView(view) {
+            activeMainView = view === 'status' ? 'status' : 'chat';
+            persistMainViewPreference(activeMainView);
+            document.getElementById('chatView').classList.toggle('active', activeMainView === 'chat');
+            document.getElementById('statusView').classList.toggle('active', activeMainView === 'status');
+            document.getElementById('chatViewTab').classList.toggle('active', activeMainView === 'chat');
+            document.getElementById('statusViewTab').classList.toggle('active', activeMainView === 'status');
+            updateStatusTabAttention();
+        }
+
+        function updateStatusTabAttention() {
+            const tab = document.getElementById('statusViewTab');
+            const label = t('status_view');
+            tab.textContent = statusAttention && activeMainView !== 'status' ? `${label} •` : label;
         }
 
         function updateUIStrings() {
@@ -393,14 +768,17 @@
             document.getElementById('skipBtn').textContent = t('end_discussion');
             document.getElementById('submitBtn').textContent = t('submit_action');
             document.getElementById('chatBtn').textContent = t('chat_btn');
+            document.getElementById('chatViewTab').textContent = t('chat_view');
+            document.getElementById('statusViewTab').textContent = t('status_view');
+            document.getElementById('rulesBtn').textContent = t('rules_btn');
             document.getElementById('actionInput').placeholder = t('content_placeholder');
-            document.getElementById('startGameBtn').textContent = t('start_game');
             document.getElementById('ui-setup-title').textContent = t('setup_title');
             document.getElementById('ui-setup-desc').textContent = t('setup_desc');
             document.getElementById('ui-grimoire-title').textContent = t('grimoire_title');
+            document.getElementById('ui-nomination-card-title').textContent = t('nomination_card_title');
+            document.getElementById('nominationAliveSubtitle').textContent = t('nomination_alive_players');
+            document.getElementById('ui-private-info-title').textContent = t('private_info_title');
             document.getElementById('grimoireBtn').textContent = t('grimoire_btn');
-            document.getElementById('ui-mode-play').textContent = t('mode_play');
-            document.getElementById('ui-mode-observe').textContent = t('mode_observe');
             document.getElementById('ui-evil-chat-label').textContent = t('evil_chat_label');
             
             if (!ws) document.getElementById('status-text').textContent = t('waiting');
@@ -408,7 +786,10 @@
 
             updatePlayerList(players);
             updatePhaseDisplay();
+            renderNominationState();
+            renderPrivateInfo();
             updateSelectOptions();
+            switchMainView(activeMainView);
         }
 
         function updateSelectOptions() {
@@ -424,6 +805,220 @@
                 <option value="false">${t('vote_against')}</option>
                 <option value="true">${t('vote_for')}</option>
             `;
+        }
+
+        function cloneData(value) {
+            if (value == null) return value;
+            return JSON.parse(JSON.stringify(value));
+        }
+
+        function nominationHasDisplayData(nominationState) {
+            if (!nominationState) return false;
+            const voteCount = nominationState.votes ? Object.keys(nominationState.votes).length : 0;
+            return Boolean(
+                nominationState.current_nominator ||
+                nominationState.current_nominee ||
+                nominationState.defense_text ||
+                nominationState.last_result ||
+                nominationState.yes_votes ||
+                voteCount
+            );
+        }
+
+        function getNominationDisplayState() {
+            const current = gameState.nomination_state || { stage: 'idle' };
+            const shouldCache = ['nomination', 'defense', 'voting', 'resolved', 'executed', 'window_open'].includes(current.stage) || nominationHasDisplayData(current);
+            if (shouldCache) {
+                cachedNominationState = cloneData(current);
+                return current;
+            }
+            if (cachedNominationState && lastRenderedDayNumber === gameState.day_number) {
+                return cachedNominationState;
+            }
+            return current;
+        }
+
+        function mergePrivateInfo(existingItems, incomingItems) {
+            const map = new Map();
+            [...(Array.isArray(existingItems) ? existingItems : []), ...(Array.isArray(incomingItems) ? incomingItems : [])].forEach((item) => {
+                if (!item) return;
+                const key = item.trace_id || `${item.payload?.type || 'info'}:${item.payload?.title || ''}:${item.payload?.lines?.join('|') || ''}`;
+                if (!map.has(key)) map.set(key, item);
+            });
+            return Array.from(map.values());
+        }
+
+        function nominationStateIsActive(nominationState) {
+            const state = nominationState || {};
+            return ['window_open', 'nomination', 'defense', 'voting', 'resolved', 'executed'].includes(state.stage)
+                || Boolean(state.current_nominator || state.current_nominee || state.defense_text || state.last_result)
+                || Boolean(state.votes && Object.keys(state.votes).length);
+        }
+
+        function renderNominationDetails(nominationState) {
+            const details = document.getElementById('nominationDetails');
+            details.innerHTML = '';
+
+            const voterNames = Object.entries(nominationState.votes || {}).map(([playerId, decision]) => {
+                const label = playerName(playerId);
+                return `${label}${decision ? ' ✓' : ' ✗'}`;
+            });
+            const nominationSummary = nominationState.current_nominee
+                ? t('nominate_desc', {
+                    nominator: playerName(nominationState.current_nominator),
+                    nominee: playerName(nominationState.current_nominee),
+                })
+                : nominationStageText(nominationState.stage);
+            const sections = [
+                {
+                    title: t('nomination_step_nomination'),
+                    body: nominationSummary || '—'
+                },
+                {
+                    title: t('current_votes'),
+                    body: typeof nominationState.threshold === 'number'
+                        ? t('vote_count_text', {
+                            current: nominationState.yes_votes || 0,
+                            threshold: nominationState.threshold || 0,
+                            alive: gameState.alive_count || 0
+                        })
+                        : '—'
+                },
+                {
+                    title: t('nomination_defense'),
+                    body: nominationState.defense_text || '—'
+                },
+                {
+                    title: t('nomination_voters'),
+                    body: voterNames.length ? voterNames.join('、') : '—'
+                },
+                {
+                    title: t('nomination_result'),
+                    body: nominationState.last_result
+                        ? (nominationState.last_result.executed
+                            ? t('execution_result', { target: playerName(nominationState.last_result.executed) })
+                            : t('no_execution'))
+                        : '—'
+                }
+            ];
+
+            sections.forEach((section) => {
+                const row = document.createElement('div');
+                row.className = 'nomination-detail';
+                const title = document.createElement('strong');
+                title.textContent = section.title;
+                const body = document.createElement('div');
+                body.textContent = section.body;
+                row.appendChild(title);
+                row.appendChild(body);
+                details.appendChild(row);
+            });
+        }
+
+        function renderNominationTimeline(nominationState, shouldShow) {
+            const timeline = document.getElementById('nominationTimeline');
+            timeline.innerHTML = '';
+            const stage = nominationState.stage || 'idle';
+            const stageOrder = ['nomination', 'defense', 'voting', 'result'];
+            const currentOrder = {
+                idle: -1,
+                window_open: 0,
+                nomination: 0,
+                defense: 1,
+                voting: 2,
+                resolved: 3,
+                executed: 3,
+                no_nomination: 3,
+                invalid_nomination: 0,
+            };
+            const activeIndex = currentOrder[stage] ?? -1;
+            const labels = [
+                t('nomination_step_nomination'),
+                t('nomination_step_defense'),
+                t('nomination_step_voting'),
+                t('nomination_step_result'),
+            ];
+            stageOrder.forEach((key, index) => {
+                const step = document.createElement('div');
+                step.className = 'timeline-step';
+                if (!shouldShow) {
+                    step.textContent = labels[index];
+                    timeline.appendChild(step);
+                    return;
+                }
+                if (index < activeIndex) step.classList.add('done');
+                if (index === activeIndex) step.classList.add('active');
+                step.textContent = labels[index];
+                timeline.appendChild(step);
+            });
+        }
+
+        function renderNominationAlivePlayers(nominationState) {
+            const roster = document.getElementById('nominationAlivePlayers');
+            roster.innerHTML = '';
+            const alivePlayers = (players || []).filter((player) => player.is_alive);
+            if (!alivePlayers.length) {
+                roster.innerHTML = '<span style="opacity:0.6;">—</span>';
+                return;
+            }
+            alivePlayers.forEach((player) => {
+                const chip = document.createElement('span');
+                chip.className = 'alive-chip';
+                if (player.player_id === nominationState.current_nominator) chip.classList.add('nominator');
+                if (player.player_id === nominationState.current_nominee) chip.classList.add('nominee');
+                chip.textContent = player.name;
+                roster.appendChild(chip);
+            });
+        }
+
+        function renderNominationState() {
+            const nominationState = getNominationDisplayState();
+            const shouldShow = ['nomination', 'defense', 'voting', 'resolved', 'executed', 'window_open'].includes(nominationState.stage) || nominationHasDisplayData(nominationState);
+            statusAttention = shouldShow;
+            updateStatusTabAttention();
+            document.getElementById('nominationStateText').textContent = shouldShow
+                ? nominationStageText(nominationState.stage)
+                : t('nomination_none');
+            renderNominationAlivePlayers(nominationState);
+            renderNominationTimeline(nominationState, shouldShow);
+
+            const meta = document.getElementById('nominationMeta');
+            meta.innerHTML = '';
+            const values = [];
+            if (nominationState.current_nominator) values.push([t('current_nominator'), playerName(nominationState.current_nominator)]);
+            if (nominationState.current_nominee) values.push([t('current_nominee'), playerName(nominationState.current_nominee)]);
+            if (typeof nominationState.round === 'number') values.push([t('nomination_round'), `${nominationState.round}`]);
+            if (shouldShow && typeof nominationState.threshold === 'number') values.push([t('current_votes'), `${nominationState.yes_votes || 0} / ${nominationState.threshold}`]);
+            values.forEach(([label, value]) => {
+                const pill = document.createElement('span');
+                pill.className = 'status-pill';
+                pill.textContent = `${label}: ${value}`;
+                meta.appendChild(pill);
+            });
+
+            renderNominationDetails(nominationState);
+        }
+
+        function renderPrivateInfo() {
+            const list = document.getElementById('privateInfoList');
+            const items = gameState.private_info || [];
+            list.innerHTML = '';
+            if (!items.length) {
+                list.innerHTML = `<div style="opacity: 0.7;">${t('private_info_empty')}</div>`;
+                return;
+            }
+
+            items.slice().reverse().forEach((entry) => {
+                const payload = entry.payload || {};
+                const div = document.createElement('div');
+                div.className = 'private-info-entry';
+                const lines = [];
+                if (Array.isArray(payload.lines)) lines.push(...payload.lines);
+                if (Array.isArray(payload.teammates) && payload.teammates.length) lines.push(`队友：${payload.teammates.join('、')}`);
+                if (Array.isArray(payload.bluffs) && payload.bluffs.length) lines.push(`不在场角色：${payload.bluffs.map(roleName).join('、')}`);
+                div.innerHTML = `<strong>${payload.title || payload.type || 'Info'}</strong>${lines.map((line) => `<div>${line}</div>`).join('')}`;
+                list.appendChild(div);
+            });
         }
 
         function logMessage(text, type = 'system', senderName = '') {
@@ -445,10 +1040,12 @@
             targetSelect.innerHTML = `<option value="">${t('select_target')}</option>`;
 
             let selfPlayer = playerData.find(p => p.player_id === currentUserId);
-            if (selfPlayer && selfPlayer.team === 'evil') {
+            const evilChatAllowed = selfPlayer && selfPlayer.team === 'evil' && gameState.viewer_mode === 'player' && ['first_night', 'night'].includes(gameState.phase);
+            if (evilChatAllowed) {
                 document.getElementById('evilChatToggleLabel').style.display = 'flex';
             } else {
                 document.getElementById('evilChatToggleLabel').style.display = 'none';
+                document.getElementById('evilChatCheck').checked = false;
             }
 
             playerData.forEach(p => {
@@ -456,7 +1053,7 @@
                 div.className = `player-item ${p.is_alive ? 'alive' : 'dead'}`;
                 let statusText = p.is_alive ? t('status_alive') : t('status_dead');
                 let roleId = p.role_id;
-                let roleDisplayName = roleId ? t('role_' + roleId) : '';
+                let roleDisplayName = roleId ? roleName(roleId) : '';
                 div.innerHTML = `<div><span>${p.name}</span><br><small class="player-role-tag">${roleDisplayName}</small></div> <small>${statusText}</small>`;
                 container.appendChild(div);
 
@@ -476,17 +1073,17 @@
             document.getElementById('current-phase-display').textContent = `${phaseName} (${dayText})`;
             
             // Setup Overlay Logic
-            if (gameState.phase === 'setup' && currentUserId === 'h1' && ws) {
+            if (gameState.phase === 'setup' && ws) {
                 document.getElementById('setupOverlay').style.display = 'flex';
             } else {
                 document.getElementById('setupOverlay').style.display = 'none';
             }
 
             // Grimoire Button
-            document.getElementById('grimoireBtn').style.display = (currentUserId === 'h1') ? 'block' : 'none';
+            document.getElementById('grimoireBtn').style.display = gameState.can_view_grimoire ? 'block' : 'none';
             
             // Observer Logic
-            if (gameState.is_observer) {
+            if (gameState.viewer_mode === 'observer') {
                 document.querySelector('.action-area').style.opacity = '0.3';
                 document.querySelector('.action-area').style.pointerEvents = 'none';
             } else {
@@ -499,39 +1096,102 @@
             try {
                 const res = await fetch(`http://localhost:8000/api/game/state?player_id=${currentUserId}`);
                 const data = await res.json();
-                gameState = data;
+                const previousDay = lastRenderedDayNumber;
+                const nextPrivateInfo = mergePrivateInfo(gameState.private_info, data.private_info);
+                gameState = {
+                    ...data,
+                    private_info: nextPrivateInfo
+                };
+                if (previousDay !== gameState.day_number) {
+                    nominationPromptKey = null;
+                    cachedNominationState = null;
+                }
+                lastRenderedDayNumber = gameState.day_number;
                 updatePhaseDisplay();
                 updatePlayerList(data.players);
+                renderNominationState();
+                renderPrivateInfo();
             } catch(e) {}
+        }
+
+        async function refreshRoleCatalog() {
+            try {
+                const res = await fetch('http://localhost:8000/api/game/roles');
+                const data = await res.json();
+                roleCatalog = Object.fromEntries((data.roles || []).map((role) => [role.role_id, role]));
+            } catch (e) {}
+        }
+
+        function currentNominationPromptKey() {
+            const round = gameState.nomination_state?.round ?? 0;
+            return `${gameState.day_number}:${round}`;
+        }
+
+        function handleEventUpdate(e) {
+            if (e.event_type === 'player_speaks') {
+                let prefix = e.payload.is_private ? `<span style="color:var(--error)">${t('evil_chat')}</span> ` : '';
+                logMessage(prefix + e.payload.content, e.actor === currentUserId ? 'self' : 'player', playerName(e.actor));
+            } else if (e.event_type === 'phase_changed') {
+                const phaseName = t(`phase_${e.phase}`);
+                const dayText = t('day_prefix', { n: e.payload.day_number || gameState.day_number });
+                logMessage(t('transition', { phase: phaseName, day: dayText }));
+            } else if (e.event_type === 'nomination_window_opened') {
+                if (nominationPromptKey !== currentNominationPromptKey()) {
+                    logMessage(t('nomination_open'));
+                }
+            } else if (e.event_type === 'nomination_started') {
+                logMessage(t('nominate_desc', { nominator: playerName(e.actor), nominee: playerName(e.target) }));
+            } else if (e.event_type === 'defense_started') {
+                const defenseText = e.payload?.content ? ` ${t('defense_prefix')}${e.payload.content}` : '';
+                logMessage(`${playerName(e.actor)} ${t('nomination_stage_defense')}.${defenseText}`);
+            } else if (e.event_type === 'vote_cast') {
+                logMessage(`${playerName(e.actor)} ${t('vote_cast')}`);
+            } else if (e.event_type === 'voting_resolved') {
+                logMessage(`${t('voting_resolved')} (${e.payload?.votes || 0}/${e.payload?.needed || 0})`);
+            } else if (e.event_type === 'execution_resolved') {
+                logMessage(e.payload.executed ? t('execution_result', { target: playerName(e.payload.executed) }) : t('no_execution'));
+            } else if (e.event_type === 'private_info_delivered') {
+                const lines = Array.isArray(e.payload.lines) ? e.payload.lines.join(' / ') : '';
+                logMessage(`${t('private_info_received', { title: e.payload.title || e.payload.type || 'Info' })}${lines ? ' ' + lines : ''}`);
+                const nextInfo = gameState.private_info || [];
+                if (!nextInfo.some((item) => item.trace_id === e.trace_id)) {
+                    gameState.private_info = [...nextInfo, { trace_id: e.trace_id, payload: e.payload }];
+                    renderPrivateInfo();
+                    statusAttention = true;
+                    updateStatusTabAttention();
+                }
+            }
         }
 
         function connect() {
             currentUserId = document.getElementById('playerId').value;
             ws = new WebSocket(`ws://${window.location.hostname}:8000/ws/${currentUserId}`);
             
-            ws.onopen = () => {
+            ws.onopen = async () => {
                 logMessage(t('alert_connected') + currentUserId);
                 document.getElementById('status-text').textContent = t('connected');
                 document.getElementById('connectBtn').disabled = true;
-                setInterval(fetchGameState, 3000);
-                fetchGameState();
+                if (pollHandle) clearInterval(pollHandle);
+                pollHandle = setInterval(fetchGameState, 1000);
+                await refreshRoleCatalog();
+                
+                // 初次连接检查是否有正在进行的游戏
+                fetchGameState().then(() => {
+                    if (gameState.phase !== 'setup') {
+                        document.getElementById('setupOverlay').style.display = 'flex';
+                        document.getElementById('setupStep1').style.display = 'none';
+                        document.getElementById('setupStep2').style.display = 'none';
+                        document.getElementById('setupStepReconnect').style.display = 'block';
+                    }
+                });
+
                 updateUIStrings();
             };
             
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 if (data.type === 'event_update') {
-                    const e = data.event;
-                    if (e.event_type === 'player_speaks') {
-                        let prefix = e.payload.is_private ? `<span style="color:var(--error)">${t('evil_chat')}</span> ` : '';
-                        logMessage(prefix + e.payload.content, 'player', e.actor);
-                    } else if (e.event_type === 'phase_change') {
-                        const phaseName = t(`phase_${e.phase}`);
-                        const dayText = t('day_prefix', { n: e.payload.day_number || gameState.day_number });
-                        logMessage(t('transition', { phase: phaseName, day: dayText }));
-                    } else {
-                        // logMessage(`[${e.event_type}] ${JSON.stringify(e.payload)}`);
-                    }
+                    handleEventUpdate(data.event);
                     fetchGameState();
                 } else if (data.type === 'action_request') {
                     handleActionRequest(data.action_type, data.context);
@@ -539,45 +1199,94 @@
             };
         }
 
-        async function submitSetup() {
-            const count = parseInt(document.getElementById('playerCountInput').value);
-            if (count < 5 || count > 15) {
-                alert(t('error_setup'));
-                return;
+        function nextSetupStep() {
+            document.getElementById('setupStep1').style.display = 'none';
+            document.getElementById('setupStep2').style.display = 'block';
+        }
+        function prevSetupStep() {
+            document.getElementById('setupStep1').style.display = 'block';
+            document.getElementById('setupStep2').style.display = 'none';
+        }
+
+        function restartSetup() {
+            if(confirm(t('reset_confirm'))) {
+                confirmReset();
+                document.getElementById('setupStepReconnect').style.display = 'none';
+                document.getElementById('setupStep1').style.display = 'block';
             }
-            const isHuman = document.querySelector('input[name="playMode"]:checked').value === 'participate';
-            const res = await fetch('http://localhost:8000/api/game/setup', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    player_count: count, 
-                    host_id: currentUserId,
-                    is_human_participant: isHuman
-                })
-            });
-            const result = await res.json();
-            if (result.status === 'ok') {
-                document.getElementById('setupOverlay').style.display = 'none';
-                logMessage("Game setup submitted. Starting...");
+        }
+
+        function closeSetup() {
+            document.getElementById('setupOverlay').style.display = 'none';
+        }
+
+        async function submitSetup(mode) {
+            const count = parseInt(document.getElementById('playerCountInput').value);
+            const humanMode = mode === 'observe' ? 'storyteller' : 'player';
+            
+            try {
+                const res = await fetch('http://localhost:8000/api/game/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        player_count: count,
+                        host_id: currentUserId,
+                        human_mode: humanMode,
+                        human_client_id: humanMode === 'player' ? currentUserId : null,
+                        storyteller_client_id: humanMode === 'storyteller' ? currentUserId : null
+                    })
+                });
+                if (res.ok) {
+                    document.getElementById('setupOverlay').style.display = 'none';
+                    fetchGameState();
+                }
+            } catch (e) {
+                alert("Setup failed: " + e);
+            }
+        }
+
+        async function confirmReset() {
+            if (confirm(t('reset_confirm'))) {
+                await fetch('http://localhost:8000/api/game/reset', { method: 'POST' });
+                window.location.reload();
             }
         }
 
         function handleActionRequest(type, context) {
+            if ((type === 'nominate' || type === 'nomination_intent')) {
+                nominationPromptKey = currentNominationPromptKey();
+            }
+
             pendingActionType = type;
-            document.getElementById('action-prompt').textContent = t('action_required') + type.toUpperCase();
+            let promptType = type === 'defense_speech' ? t('nomination_stage_defense') : type;
+            if (type === 'vote') {
+                promptType = `${t('nomination_stage_voting')} - ${playerName(gameState.nomination_state?.current_nominee)}`;
+            } else if (type === 'nominate' || type === 'nomination_intent') {
+                promptType = t('nomination_open');
+            }
+            document.getElementById('action-prompt').textContent = t('action_required', { type: promptType });
             document.getElementById('submitBtn').disabled = false;
             
-            document.getElementById('actionInput').style.display = (type === 'speak') ? 'block' : 'none';
-            document.getElementById('toneSelect').style.display = (type === 'speak') ? 'block' : 'none';
-            document.getElementById('targetSelect').style.display = (type === 'night_action' || type === 'nominate') ? 'block' : 'none';
+            const textAction = type === 'speak' || type === 'defense_speech';
+            document.getElementById('actionInput').style.display = textAction ? 'block' : 'none';
+            document.getElementById('toneSelect').style.display = textAction ? 'block' : 'none';
+            document.getElementById('targetSelect').style.display = (type === 'night_action' || type === 'nominate' || type === 'nomination_intent') ? 'block' : 'none';
             document.getElementById('voteSelect').style.display = (type === 'vote') ? 'block' : 'none';
             document.getElementById('skipBtn').style.display = (type === 'speak') ? 'block' : 'none';
+            if (type === 'defense_speech') {
+                logMessage(t('defense_prompt'));
+            } else if (type === 'nominate' || type === 'nomination_intent') {
+                logMessage(t('nominate_prompt'));
+            }
         }
 
         function sendQuickChat() {
             const content = document.getElementById('actionInput').value;
             if (!content || !ws) return;
             const isPrivate = document.getElementById('evilChatCheck').checked;
+            if (isPrivate && !['first_night', 'night'].includes(gameState.phase)) {
+                logMessage(t('chat_locked'));
+            }
             ws.send(JSON.stringify({
                 type: "chat",
                 content: content,
@@ -594,11 +1303,17 @@
 
         function sendAction() {
             let payload = { action: pendingActionType };
-            if (pendingActionType === 'speak') {
+            if (pendingActionType === 'speak' || pendingActionType === 'defense_speech') {
                 payload.content = document.getElementById('actionInput').value;
                 payload.tone = document.getElementById('toneSelect').value;
-            } else if (pendingActionType === 'night_action' || pendingActionType === 'nominate') {
-                payload.target = document.getElementById('targetSelect').value;
+            } else if (pendingActionType === 'night_action' || pendingActionType === 'nominate' || pendingActionType === 'nomination_intent') {
+                const target = document.getElementById('targetSelect').value;
+                if (target) {
+                    payload.action = 'nominate';
+                    payload.target = target;
+                } else {
+                    payload.action = 'none';
+                }
             } else if (pendingActionType === 'vote') {
                 payload.decision = document.getElementById('voteSelect').value === 'true';
             }
@@ -612,6 +1327,10 @@
             document.getElementById('skipBtn').style.display = 'none';
             pendingActionType = null;
             document.getElementById('actionInput').value = '';
+            document.getElementById('actionInput').style.display = 'block';
+            document.getElementById('toneSelect').style.display = 'block';
+            document.getElementById('targetSelect').style.display = 'none';
+            document.getElementById('voteSelect').style.display = 'none';
         }
 
         function toggleGrimoire() {
@@ -629,28 +1348,34 @@
             content.innerHTML = '<p>Loading...</p>';
             
             try {
-                const res = await fetch('http://localhost:8000/api/game/grimoire');
+                const res = await fetch(`http://localhost:8000/api/game/grimoire?player_id=${currentUserId}`);
+                if (res.status === 403) {
+                    content.innerHTML = '<p style="color: var(--error)">Only the storyteller can open the Grimoire.</p>';
+                    return;
+                }
                 const data = await res.json();
                 const grimoirePlayers = data.players || [];
                 
                 content.innerHTML = '';
                 grimoirePlayers.forEach(p => {
                     const card = document.createElement('div');
-                    card.className = `grimoire-card ${p.team === 'evil' ? 'evil' : 'good'}`;
-                    let statusTags = [];
-                    if (p.is_poisoned) statusTags.push(`<span style="color: var(--accent)">[${t('status_poisoned')}]</span>`);
-                    if (p.is_drunk) statusTags.push(`<span style="color: var(--secondary)">[${t('status_drunk')}]</span>`);
+                    card.className = `grimoire-card ${(p.current_team || p.team) === 'evil' || p.is_demon ? 'evil' : 'good'}`;
                     
-                    const roleName = t('role_' + p.role_id) || p.role_id;
-                    const fakeRoleName = p.fake_role ? t('role_' + p.fake_role) : null;
+                    let statusHtml = '<div class="status-tags">';
+                    if (p.is_poisoned) statusHtml += `<span class="badge badge-poison">${t('status_poisoned')}</span>`;
+                    if (p.is_drunk) statusHtml += `<span class="badge badge-drunk">${t('status_drunk')}</span>`;
+                    if (!p.is_alive) statusHtml += `<span class="badge badge-dead">${t('status_dead')}</span>`;
+                    statusHtml += '</div>';
+                    
+                    const displayRoleName = roleName(p.true_role_id || p.role_id);
+                    const fakeRoleName = p.perceived_role_id && p.perceived_role_id !== p.true_role_id ? roleName(p.perceived_role_id) : null;
                     
                     card.innerHTML = `
-                        <strong>${p.name}</strong> (${p.player_id})<br>
-                        <span style="color: var(--primary)">${roleName}</span><br>
-                        <small>${p.team.toUpperCase()}</small><br>
-                        ${statusTags.join(' ')}<br>
-                        <small>${p.is_alive ? t('status_alive') : t('status_dead')}</small>
-                        ${p.fake_role ? `<br><small style="color: #888">Fake: ${fakeRoleName}</small>` : ''}
+                        <strong>${p.name}</strong>
+                        <div class="role-name">${displayRoleName}</div>
+                        <small style="opacity: 0.7;">ID: ${p.player_id} | Team: ${(p.current_team || p.team || '').toUpperCase()}</small>
+                        ${statusHtml}
+                        ${fakeRoleName ? `<div style="color: #888; font-size: 0.8rem;">(Perceived: ${fakeRoleName})</div>` : ''}
                     `;
                     content.appendChild(card);
                 });
@@ -659,8 +1384,71 @@
             }
         }
 
+        function toggleRules() {
+            const overlay = document.getElementById('rulesOverlay');
+            if (overlay.style.display === 'flex') {
+                overlay.style.display = 'none';
+            } else {
+                showRuleTab('roles');
+                overlay.style.display = 'flex';
+            }
+        }
+
+        async function showRuleTab(tab) {
+            const content = document.getElementById('rulesContent');
+            content.innerHTML = 'Loading...';
+            
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.tab-btn[onclick*="${tab}"]`).classList.add('active');
+
+            if (tab === 'roles') {
+                const res = await fetch('http://localhost:8000/api/game/roles');
+                const data = await res.json();
+                let html = '<div style="display: grid; gap: 15px;">';
+                data.roles.forEach(r => {
+                    html += `
+                        <div style="border-bottom: 1px solid #444; padding-bottom: 10px;">
+                            <strong style="color: ${r.team === 'evil' ? 'var(--error)' : 'var(--primary)'}">${r.name}</strong> (${r.type})<br>
+                            <small>${r.description}</small>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                content.innerHTML = html;
+            } else if (tab === 'setup') {
+                content.innerHTML = `
+                    <table style="width: 100%; text-align: center; border-collapse: collapse;">
+                        <tr style="border-bottom: 2px solid #555;"><th>Players</th><th>Town</th><th>Outs</th><th>Minion</th><th>Demon</th></tr>
+                        <tr><td>5</td><td>3</td><td>0</td><td>1</td><td>1</td></tr>
+                        <tr><td>6</td><td>3</td><td>1</td><td>1</td><td>1</td></tr>
+                        <tr><td>7</td><td>5</td><td>0</td><td>1</td><td>1</td></tr>
+                        <tr><td>8</td><td>5</td><td>1</td><td>1</td><td>1</td></tr>
+                        <tr><td>9</td><td>5</td><td>2</td><td>1</td><td>1</td></tr>
+                        <tr><td>10</td><td>7</td><td>0</td><td>2</td><td>1</td></tr>
+                        <tr><td>11</td><td>7</td><td>1</td><td>2</td><td>1</td></tr>
+                        <tr><td>12</td><td>7</td><td>2</td><td>2</td><td>1</td></tr>
+                        <tr><td>13</td><td>9</td><td>0</td><td>3</td><td>1</td></tr>
+                        <tr><td>14</td><td>9</td><td>1</td><td>3</td><td>1</td></tr>
+                        <tr><td>15</td><td>9</td><td>2</td><td>3</td><td>1</td></tr>
+                    </table>
+                `;
+            } else if (tab === 'flow') {
+                content.innerHTML = `
+                    <ol style="line-height: 1.8;">
+                        <li><strong>SETUP</strong>: Seating and roles distributed.</li>
+                        <li><strong>FIRST NIGHT</strong>: Minions and Demon meet; roles get initial info.</li>
+                        <li><strong>DAY DISCUSSION</strong>: Talk and build trust.</li>
+                        <li><strong>NOMINATION</strong>: Accuse others.</li>
+                        <li><strong>VOTING</strong>: Reach a majority to execute.</li>
+                        <li><strong>NIGHT</strong>: Characters use abilities; Demon kills.</li>
+                    </ol>
+                `;
+            }
+        }
+
         // Init
         updateUIStrings();
+        clearActionState();
     </script>
 </body>
 </html>
