@@ -170,6 +170,44 @@ async def test_ai_agent_fallback_nomination_returns_legal_target():
 
 
 @pytest.mark.asyncio
+async def test_ai_agent_nomination_intent_can_proactively_nominate():
+    class PassiveBackend(DummyBackend):
+        async def generate(self, system_prompt: str, messages: list[Message], **kwargs) -> LLMResponse:
+            return LLMResponse(content='{"action":"none"}', tool_calls=[])
+
+    agent = AIAgent(
+        player_id="p1",
+        name="Alice",
+        backend=PassiveBackend(),
+        persona=Persona(description="强势带节奏者", speaking_style="直接、喜欢推动局面"),
+    )
+    state = GameState(
+        phase=GamePhase.NOMINATION,
+        round_number=2,
+        day_number=2,
+        current_nominee=None,
+        current_nominator=None,
+        chat_history=(
+            ChatMessage(speaker="p2", content="p3 的解释有点怪，我有点怀疑 p3。", phase=GamePhase.DAY_DISCUSSION, round_number=1),
+            ChatMessage(speaker="p3", content="我还是觉得 p2 更可疑。", phase=GamePhase.DAY_DISCUSSION, round_number=1),
+            ChatMessage(speaker="p1", content="我也觉得 p3 需要被提名。", phase=GamePhase.DAY_DISCUSSION, round_number=1),
+            ChatMessage(speaker="p1", content="p3 真的很可疑，应该提名。", phase=GamePhase.DAY_DISCUSSION, round_number=1),
+        ),
+        players=(
+            PlayerState(player_id="p1", name="Alice", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Bob", role_id="chef", team=Team.GOOD, is_alive=False),
+            PlayerState(player_id="p3", name="Charlie", role_id="imp", team=Team.EVIL),
+        ),
+        nominations_today=(),
+        nominees_today=(),
+    )
+
+    decision = await agent.act(state, "nomination_intent")
+    assert decision["action"] == "nominate"
+    assert decision["target"] == "p3"
+
+
+@pytest.mark.asyncio
 async def test_ai_agent_fallback_vote_remains_structured():
     class BrokenBackend(DummyBackend):
         async def generate(self, system_prompt: str, messages: list[Message], **kwargs) -> LLMResponse:

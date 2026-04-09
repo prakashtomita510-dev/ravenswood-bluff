@@ -34,7 +34,8 @@ def _pick_decoy_pair(game_state: GameState, actor_id: str, target_player_id: str
     decoy = random.choice(others) if others else game_state.get_player(target_player_id)
     pair = [target_player_id]
     if decoy:
-        pair.append(decoy.player_id)
+        if decoy.player_id != target_player_id:
+            pair.append(decoy.player_id)
     random.shuffle(pair)
     return pair
 

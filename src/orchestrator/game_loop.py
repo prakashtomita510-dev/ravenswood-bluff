@@ -20,6 +20,7 @@ from src.orchestrator.event_bus import EventBus
 from src.orchestrator.information_broker import InformationBroker
 from src.state.event_log import EventLog
 from src.state.game_state import (
+    AbilityTrigger,
     ChatMessage,
     GameConfig,
     GameEvent,
@@ -72,6 +73,17 @@ class GameOrchestrator:
         nomination_state = dict(payload.get("nomination_state", {}))
         nomination_state.update(kwargs)
         payload["nomination_state"] = nomination_state
+        self.state = self.state.with_update(payload=payload)
+
+    def _append_nomination_history(self, entry: dict[str, Any]) -> None:
+        payload = dict(self.state.payload)
+        day_number = self.state.day_number
+        history = [
+            item for item in payload.get("nomination_history", [])
+            if item.get("day_number") == day_number
+        ]
+        history.append({"day_number": day_number, **entry})
+        payload["nomination_history"] = history[-12:]
         self.state = self.state.with_update(payload=payload)
 
     def _player_label(self, player_id: str | None) -> str:
@@ -141,6 +153,10 @@ class GameOrchestrator:
             pair = ", ".join(self._player_label(pid) for pid in payload.get("players", [])) or "这两人"
             result = "至少有一人是恶魔" if payload.get("has_demon") else "这两人都不是恶魔"
             lines = [f"{pair}：{result}。"]
+        elif info_type == "ravenkeeper_info":
+            title = title or f"{get_role_name(role_id)}信息"
+            seen_role = get_role_name(payload.get("role_seen", "unknown"))
+            lines = [f"你得知该玩家的身份是：{seen_role}。"]
         else:
             title = title or f"{get_role_name(role_id)}信息"
             if not lines:
@@ -272,7 +288,7 @@ class GameOrchestrator:
                 max_nomination_rounds=max_nomination_rounds,
             ),
         )
-        self._update_payload(nomination_state={"stage": "idle"})
+        self._update_payload(nomination_state={"stage": "idle"}, nomination_history=[])
         self._update_grimoire()
 
         from src.agents.ai_agent import AIAgent, Persona
@@ -321,6 +337,19 @@ class GameOrchestrator:
             round_number=self.phase_manager.round_number,
             day_number=self.phase_manager.day_number,
         )
+        if target_phase == GamePhase.GAME_OVER:
+            self._set_nomination_state(
+                stage="idle",
+                result_phase="game_over",
+                current_nominator=None,
+                current_nominee=None,
+                votes_cast=0,
+                yes_votes=0,
+                threshold=(self.state.alive_count // 2) + 1 if self.state.alive_count else 0,
+                votes={},
+                defense_text=None,
+                last_result=None,
+            )
         phase_event = GameEvent(
             event_type="phase_changed",
             phase=target_phase,
@@ -463,6 +492,7 @@ class GameOrchestrator:
         self._clear_transient_statuses()
         await self._execute_night_actions(GamePhase.NIGHT)
         await self._distribute_night_info(GamePhase.NIGHT)
+        await self._resolve_on_death_triggers(pre_alive)
         self._sync_all_agents("BOTC-FLOW-NIGHT")
         self._update_grimoire()
         for dead_id in sorted(pre_alive - {p.player_id for p in self.state.get_alive_players()}):
@@ -475,6 +505,79 @@ class GameOrchestrator:
                 visibility=Visibility.PUBLIC,
                 payload={"reason": "night"},
             ))
+
+    async def _resolve_on_death_triggers(self, pre_alive: set[str]) -> None:
+        newly_dead_ids = sorted(pre_alive - {p.player_id for p in self.state.get_alive_players()})
+        for dead_id in newly_dead_ids:
+            player = self.state.get_player(dead_id)
+            if not player:
+                continue
+            role_id = player.true_role_id or player.role_id
+            role_cls = get_role_class(role_id)
+            if not role_cls or role_cls.get_definition().ability.trigger != AbilityTrigger.ON_DEATH:
+                continue
+            agent = self.broker.agents.get(dead_id)
+            if not agent:
+                continue
+            trace_id = self._make_trace_id("BOTC-ST-DEATH")
+            await self._publish_event(GameEvent(
+                event_type="death_trigger_requested",
+                phase=GamePhase.NIGHT,
+                round_number=self.state.round_number,
+                trace_id=trace_id,
+                actor=dead_id,
+                visibility=Visibility.STORYTELLER_ONLY,
+                payload={"role_id": role_id},
+            ))
+            self._log_storyteller(
+                "death_trigger_requested",
+                actor=dead_id,
+                role=role_id,
+                trace_id=trace_id,
+            )
+            self._record_storyteller_judgement(
+                "death_trigger",
+                decision="request",
+                actor=dead_id,
+                role=role_id,
+                trace_id=trace_id,
+            )
+            try:
+                action = await agent.act(self.state, "death_trigger")
+            except Exception as exc:
+                logger.warning("死亡触发决策失败: %s", exc)
+                action = {"action": "death_trigger", "target": None, "reasoning": f"death_trigger_error:{type(exc).__name__}"}
+            target = action.get("target")
+            role = role_cls()
+            new_state, events = role.execute_ability(self.state, player, target)
+            self.state = new_state
+            for event in events:
+                if event.event_type == "night_info" and event.visibility == Visibility.PRIVATE:
+                    payload = dict(event.payload)
+                    payload.setdefault("type", f"{role_id}_info")
+                    await self._publish_private_info(
+                        phase=GamePhase.NIGHT,
+                        target=dead_id,
+                        trace_id=trace_id,
+                        payload=payload,
+                    )
+                    continue
+                await self.event_bus.publish(event)
+            self._log_storyteller(
+                "death_trigger_resolved",
+                actor=dead_id,
+                role=role_id,
+                target=target,
+                trace_id=trace_id,
+            )
+            self._record_storyteller_judgement(
+                "death_trigger",
+                decision="resolved",
+                actor=dead_id,
+                role=role_id,
+                target=target,
+                trace_id=trace_id,
+            )
 
     async def _execute_night_actions(self, phase: GamePhase) -> None:
         steps = await self.storyteller_agent.build_night_order(self.state, phase) if self.storyteller_agent else []
@@ -638,6 +741,7 @@ class GameOrchestrator:
             current_nominator=None,
             execution_candidates=(),
         )
+        self._update_payload(nomination_history=[])
         rounds = self.state.config.discussion_rounds if self.state.config else 3
         for discussion_round in range(1, rounds + 1):
             for player in self.state.players:
@@ -684,7 +788,14 @@ class GameOrchestrator:
         ))
 
     async def _run_nomination_phase(self) -> None:
-        self._set_nomination_state(stage="window_open", current_nominator=None, current_nominee=None, votes_cast=0, yes_votes=0)
+        self._set_nomination_state(
+            stage="window_open",
+            result_phase="window_open",
+            current_nominator=None,
+            current_nominee=None,
+            votes_cast=0,
+            yes_votes=0,
+        )
         max_rounds = self.state.config.max_nomination_rounds if self.state.config and self.state.config.max_nomination_rounds else max(1, self.state.alive_count)
         nomination_round = 0
         had_any_nomination = False
@@ -703,6 +814,7 @@ class GameOrchestrator:
             if not chosen:
                 self._set_nomination_state(
                     stage="no_nomination" if not had_any_nomination else "resolved",
+                    result_phase="no_nomination" if not had_any_nomination else "vote_resolved",
                     current_nominator=None,
                     current_nominee=None,
                     votes_cast=0,
@@ -739,7 +851,13 @@ class GameOrchestrator:
                 self.state, events = NominationManager.nominate(self.state, nominator_id, target_id, trace_id)
             except ValueError as exc:
                 logger.warning("无效提名: %s", exc)
-                self._set_nomination_state(stage="invalid_nomination", reason=str(exc), round=nomination_round, last_result={"executed": None})
+                self._set_nomination_state(
+                    stage="invalid_nomination",
+                    result_phase="invalid_nomination",
+                    reason=str(exc),
+                    round=nomination_round,
+                    last_result={"executed": None},
+                )
                 self._log_storyteller(
                     "nomination_invalid",
                     round=nomination_round,
@@ -771,6 +889,7 @@ class GameOrchestrator:
                 await self.event_bus.publish(event)
             self._set_nomination_state(
                 stage="defense",
+                result_phase="nomination_started",
                 current_nominator=nominator_id,
                 current_nominee=target_id,
                 votes_cast=0,
@@ -788,6 +907,14 @@ class GameOrchestrator:
                 nominee=target_id,
                 threshold=RuleEngine.votes_required(self.state),
             )
+            self._append_nomination_history({
+                "kind": "nomination_started",
+                "round": nomination_round,
+                "nominator": nominator_id,
+                "nominee": target_id,
+                "threshold": RuleEngine.votes_required(self.state),
+                "trace_id": trace_id,
+            })
             self._record_storyteller_judgement(
                 "nomination_started",
                 decision="start",
@@ -800,11 +927,19 @@ class GameOrchestrator:
                 self._update_payload(skip_execution_finalize=True)
                 self._set_nomination_state(
                     stage="executed",
+                    result_phase="execution_resolved",
                     current_nominator=nominator_id,
                     current_nominee=target_id,
                     round=nomination_round,
                     last_result={"executed": nominator_id, "reason": "virgin"},
                 )
+                self._append_nomination_history({
+                    "kind": "execution_resolved",
+                    "round": nomination_round,
+                    "executed": nominator_id,
+                    "reason": "virgin",
+                    "trace_id": trace_id,
+                })
                 self._log_storyteller(
                     "virgin_trigger",
                     round=nomination_round,
@@ -849,7 +984,25 @@ class GameOrchestrator:
         for event in events:
             await self.event_bus.publish(event)
         final_payload = events[0].payload if events else {"executed": None}
-        self._set_nomination_state(stage="executed", last_result=final_payload, votes_cast=0, round=nomination_round)
+        self._set_nomination_state(
+            stage="executed",
+            result_phase="execution_resolved",
+            current_nominator=None,
+            current_nominee=None,
+            votes={},
+            votes_cast=0,
+            yes_votes=0,
+            defense_text=None,
+            last_result=final_payload,
+            round=nomination_round,
+        )
+        self._append_nomination_history({
+            "kind": "execution_resolved",
+            "round": nomination_round,
+            "executed": final_payload.get("executed"),
+            "votes": final_payload.get("votes"),
+            "trace_id": trace_id,
+        })
         self._sync_all_agents(trace_id)
         self._log_storyteller(
             "execution_finalized",
@@ -875,6 +1028,41 @@ class GameOrchestrator:
             target_id = intent.get("target")
             if intent.get("action") == "nominate" and target_id:
                 return player_id, target_id
+        if self.state.config and self.state.config.audit_mode:
+            return self._select_audit_nomination_fallback()
+        return None
+
+    def _select_audit_nomination_fallback(self) -> tuple[str, str] | None:
+        seat_order = self.state.seat_order or tuple(p.player_id for p in self.state.players)
+        for nominator_id in seat_order:
+            nominator = self.state.get_player(nominator_id)
+            if not nominator or not nominator.is_alive:
+                continue
+            if nominator_id in self.state.nominations_today:
+                continue
+            for target_id in seat_order:
+                if target_id == nominator_id:
+                    continue
+                target = self.state.get_player(target_id)
+                if not target or not target.is_alive:
+                    continue
+                if target_id in self.state.nominees_today:
+                    continue
+                allowed, _ = RuleEngine.can_nominate(self.state, nominator_id, target_id)
+                if allowed:
+                    self._log_storyteller(
+                        "nomination_audit_fallback",
+                        nominator=nominator_id,
+                        nominee=target_id,
+                    )
+                    self._record_storyteller_judgement(
+                        "nomination_choice",
+                        decision="audit_fallback",
+                        reason="no_agent_crossed_threshold",
+                        nominator=nominator_id,
+                        nominee=target_id,
+                    )
+                    return nominator_id, target_id
         return None
 
     def _can_continue_nomination_rounds(self, nomination_round: int, max_rounds: int) -> bool:
@@ -1026,7 +1214,7 @@ class GameOrchestrator:
                 nominee=nominee_id,
                 trace_id=trace_id,
             )
-        self._set_nomination_state(stage="voting")
+        self._set_nomination_state(stage="voting", result_phase="defense_started")
         self._log_storyteller("voting_opened", nominee=nominee_id, trace_id=trace_id)
         self._record_storyteller_judgement(
             "voting",
@@ -1096,6 +1284,7 @@ class GameOrchestrator:
             result_payload["target"] = nominee_id
             self._set_nomination_state(
                 stage="resolved",
+                result_phase="vote_resolved",
                 last_result=result_payload,
                 current_nominee=nominee_id,
                 votes=vote_details,
@@ -1103,6 +1292,16 @@ class GameOrchestrator:
                 yes_votes=yes_votes,
                 defense_text=defense_text,
             )
+            self._append_nomination_history({
+                "kind": "voting_resolved",
+                "round": self.state.payload.get("nomination_state", {}).get("round"),
+                "nominee": nominee_id,
+                "passed": result_payload.get("passed"),
+                "votes": result_payload.get("votes"),
+                "needed": result_payload.get("needed"),
+                "voters": vote_details,
+                "trace_id": trace_id,
+            })
             self._log_storyteller(
                 "voting_resolved",
                 nominee=nominee_id,

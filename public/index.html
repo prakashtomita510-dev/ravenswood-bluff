@@ -302,6 +302,28 @@
         .nomination-detail { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; }
         .nomination-detail strong { display: block; margin-bottom: 6px; color: var(--secondary); }
         .nomination-detail .detail-muted { opacity: 0.72; }
+        .nomination-history {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 12px;
+            max-height: 220px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .nomination-history-entry {
+            background: rgba(255,255,255,0.035);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+        .nomination-history-entry strong {
+            display: block;
+            color: var(--accent);
+            margin-bottom: 4px;
+        }
         .nomination-timeline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
         .timeline-step {
             border-radius: 10px;
@@ -349,6 +371,7 @@
             display: flex;
             flex-direction: column;
             min-height: 0;
+            overflow-y: auto;
         }
     </style>
 </head>
@@ -394,6 +417,8 @@
                     <div id="nominationMeta" class="status-meta"></div>
                     <div id="nominationTimeline" class="nomination-timeline"></div>
                     <div id="nominationDetails" class="nomination-details"></div>
+                    <h3 id="ui-nomination-history-title" style="margin-top: 12px;">本轮提名记录</h3>
+                    <div id="nominationHistory" class="nomination-history"></div>
                 </div>
                 <div class="status-card status-card-fill">
                     <h3 id="ui-private-info-title">私密信息</h3>
@@ -485,6 +510,7 @@
         let currentLang = 'zh';
         let currentUserId = 'h1';
         let roleCatalog = {};
+        let currentGameId = null;
         let lastRenderedDayNumber = null;
         let nominationPromptKey = null;
         let cachedNominationState = null;
@@ -506,6 +532,7 @@
         let gameState = {
             phase: 'setup',
             day_number: 0,
+            game_id: null,
             viewer_mode: 'observer',
             human_mode: 'none',
             can_view_grimoire: false,
@@ -572,6 +599,9 @@
                 vote_count_text: "{current} / {threshold} 票 (存活: {alive})",
                 execution_result: "最终判决: {target} 被处决!",
                 no_execution: "最终判决: 今日无人被处决。",
+                nomination_result_pending: "本轮投票已结算，等待最终处决结果。",
+                nomination_passed_pending: "本轮提名通过：{target} 目前处于最高票，今日处决将在提名阶段结束后确定。",
+                nomination_failed_round: "本轮投票未通过，等待下一轮提名。",
                 defense_prefix: "辩解: ",
                 nomination_card_title: "提名状态",
                 nomination_none: "当前还没有提名。",
@@ -601,6 +631,21 @@
                 nomination_defense: "辩解内容",
                 nomination_voters: "已投票玩家",
                 nomination_result: "最终结果",
+                death_trigger_prompt: "你在夜晚死亡并触发了技能，请选择一名玩家查看其身份。",
+                nomination_history_title: "本轮历史提名",
+                nomination_history_empty: "当前还没有历史提名记录。",
+                nomination_history_round: "第 {round} 轮",
+                nomination_history_started: "{nominator} 提名了 {nominee}",
+                nomination_history_vote_passed: "{nominee} 获得 {votes}/{needed} 票，本轮通过。",
+                nomination_history_vote_failed: "{nominee} 获得 {votes}/{needed} 票，本轮未通过。",
+                nomination_history_execution: "{target} 被处决。",
+                nomination_history_no_execution: "今日无人被处决。",
+                nomination_history_execution_reason: "处决原因：{reason}",
+                nomination_result_game_over: "游戏已经结束，本轮提名状态已封存。",
+                death_announcement: "{target} 死亡了。",
+                death_announcement_reason: "{target} 死亡了（原因：{reason}）。",
+                death_reason_execution: "处决",
+                death_reason_night: "夜晚",
                 chat_locked: "当前不是邪恶私聊时间，消息将作为公共发言发送。",
                 // 角色翻译
                 role_washerwoman: "洗衣妇", role_librarian: "图书馆员", role_investigator: "调查员", role_chef: "厨师", role_empath: "共情者",
@@ -667,6 +712,9 @@
                 vote_count_text: "{current} / {threshold} 票 (存活: {alive})",
                 execution_result: "最终判决: {target} 被处决!",
                 no_execution: "最终判决: 今日无人被处决。",
+                nomination_result_pending: "The vote has resolved. Waiting for the final execution result.",
+                nomination_passed_pending: "This nomination passed: {target} is currently leading and final execution will be decided after nominations close.",
+                nomination_failed_round: "This vote did not pass. Waiting for the next nomination round.",
                 defense_prefix: "辩解: ",
                 nomination_card_title: "Nomination Status",
                 nomination_none: "No nomination is active.",
@@ -696,6 +744,21 @@
                 nomination_defense: "Defense",
                 nomination_voters: "Voters",
                 nomination_result: "Final Result",
+                death_trigger_prompt: "You died at night and triggered your ability. Choose a player to inspect.",
+                nomination_history_title: "Nomination History",
+                nomination_history_empty: "No nomination history yet.",
+                nomination_history_round: "Round {round}",
+                nomination_history_started: "{nominator} nominated {nominee}",
+                nomination_history_vote_passed: "{nominee} got {votes}/{needed} votes and the round passed.",
+                nomination_history_vote_failed: "{nominee} got {votes}/{needed} votes and the round failed.",
+                nomination_history_execution: "{target} was executed.",
+                nomination_history_no_execution: "No execution occurred today.",
+                nomination_history_execution_reason: "Reason: {reason}",
+                nomination_result_game_over: "The game is over. The nomination board is now archived.",
+                death_announcement: "{target} has died.",
+                death_announcement_reason: "{target} has died (reason: {reason}).",
+                death_reason_execution: "execution",
+                death_reason_night: "night",
                 chat_locked: "Private evil chat is closed. Your message will be public.",
                 // Roles
                 role_washerwoman: "Washerwoman", role_librarian: "Librarian", role_investigator: "Investigator", role_chef: "Chef", role_empath: "Empath",
@@ -777,6 +840,7 @@
             document.getElementById('ui-grimoire-title').textContent = t('grimoire_title');
             document.getElementById('ui-nomination-card-title').textContent = t('nomination_card_title');
             document.getElementById('nominationAliveSubtitle').textContent = t('nomination_alive_players');
+            document.getElementById('ui-nomination-history-title').textContent = t('nomination_history_title');
             document.getElementById('ui-private-info-title').textContent = t('private_info_title');
             document.getElementById('grimoireBtn').textContent = t('grimoire_btn');
             document.getElementById('ui-evil-chat-label').textContent = t('evil_chat_label');
@@ -812,22 +876,66 @@
             return JSON.parse(JSON.stringify(value));
         }
 
+        function buildEmptyGameState(gameId = null) {
+            return {
+                phase: 'setup',
+                day_number: 0,
+                game_id: gameId,
+                viewer_mode: 'observer',
+                human_mode: 'none',
+                can_view_grimoire: false,
+                nomination_state: { stage: 'idle', game_id: gameId },
+                private_info: [],
+                players: []
+            };
+        }
+
+        function clearSessionArtifacts(nextGameId = null) {
+            currentGameId = nextGameId;
+            lastRenderedDayNumber = null;
+            nominationPromptKey = null;
+            cachedNominationState = null;
+            statusAttention = false;
+            players = [];
+            pendingActionType = null;
+            gameState = buildEmptyGameState(nextGameId);
+            const logBox = document.getElementById('logBox');
+            if (logBox) {
+                logBox.innerHTML = '';
+            }
+            const privateInfoList = document.getElementById('privateInfoList');
+            if (privateInfoList) {
+                privateInfoList.innerHTML = '';
+            }
+            updateStatusTabAttention();
+        }
+
         function nominationHasDisplayData(nominationState) {
             if (!nominationState) return false;
             const voteCount = nominationState.votes ? Object.keys(nominationState.votes).length : 0;
+            const historyCount = Array.isArray(nominationState.history) ? nominationState.history.length : 0;
             return Boolean(
                 nominationState.current_nominator ||
                 nominationState.current_nominee ||
                 nominationState.defense_text ||
                 nominationState.last_result ||
                 nominationState.yes_votes ||
-                voteCount
+                voteCount ||
+                historyCount
             );
         }
 
         function getNominationDisplayState() {
             const current = gameState.nomination_state || { stage: 'idle' };
-            const shouldCache = ['nomination', 'defense', 'voting', 'resolved', 'executed', 'window_open'].includes(current.stage) || nominationHasDisplayData(current);
+            if (gameState.phase === 'game_over' || current.result_phase === 'game_over') {
+                cachedNominationState = null;
+                return current;
+            }
+            if (['executed', 'no_nomination', 'invalid_nomination'].includes(current.stage)) {
+                cachedNominationState = null;
+                return current;
+            }
+            const shouldCache = ['nomination', 'defense', 'voting', 'resolved', 'window_open'].includes(current.stage) || nominationHasDisplayData(current);
             if (shouldCache) {
                 cachedNominationState = cloneData(current);
                 return current;
@@ -850,8 +958,8 @@
 
         function nominationStateIsActive(nominationState) {
             const state = nominationState || {};
-            return ['window_open', 'nomination', 'defense', 'voting', 'resolved', 'executed'].includes(state.stage)
-                || Boolean(state.current_nominator || state.current_nominee || state.defense_text || state.last_result)
+            return ['window_open', 'nomination', 'defense', 'voting', 'resolved'].includes(state.stage)
+                || Boolean(state.current_nominator || state.current_nominee || state.defense_text)
                 || Boolean(state.votes && Object.keys(state.votes).length);
         }
 
@@ -863,6 +971,8 @@
                 const label = playerName(playerId);
                 return `${label}${decision ? ' ✓' : ' ✗'}`;
             });
+            const resultPayload = nominationState.last_result || {};
+            const resultPhase = nominationState.result_phase || nominationState.stage || 'idle';
             const nominationSummary = nominationState.current_nominee
                 ? t('nominate_desc', {
                     nominator: playerName(nominationState.current_nominator),
@@ -894,11 +1004,17 @@
                 },
                 {
                     title: t('nomination_result'),
-                    body: nominationState.last_result
-                        ? (nominationState.last_result.executed
-                            ? t('execution_result', { target: playerName(nominationState.last_result.executed) })
-                            : t('no_execution'))
-                        : '—'
+                    body: gameState.phase === 'game_over' || resultPhase === 'game_over'
+                        ? t('nomination_result_game_over')
+                        : resultPayload.executed
+                        ? t('execution_result', { target: playerName(resultPayload.executed) })
+                        : (resultPhase === 'vote_resolved'
+                            ? (resultPayload.passed && resultPayload.target
+                                ? t('nomination_passed_pending', { target: playerName(resultPayload.target) })
+                                : t('nomination_failed_round'))
+                            : (['execution_resolved', 'executed', 'no_nomination'].includes(resultPhase)
+                                ? t('no_execution')
+                                : '—'))
                 }
             ];
 
@@ -912,6 +1028,67 @@
                 row.appendChild(title);
                 row.appendChild(body);
                 details.appendChild(row);
+            });
+        }
+
+        function renderNominationHistory(nominationState) {
+            const container = document.getElementById('nominationHistory');
+            container.innerHTML = '';
+            const history = Array.isArray(nominationState.history) ? nominationState.history : [];
+            if (!history.length) {
+                container.innerHTML = `<div style="opacity: 0.7;">${t('nomination_history_empty')}</div>`;
+                return;
+            }
+
+            history.slice().reverse().forEach((entry) => {
+                const card = document.createElement('div');
+                card.className = 'nomination-history-entry';
+
+                const title = document.createElement('strong');
+                const roundLabel = typeof entry.round === 'number'
+                    ? t('nomination_history_round', { round: entry.round })
+                    : t('nomination_step_result');
+                title.textContent = roundLabel;
+                card.appendChild(title);
+
+                const lines = [];
+                if (entry.kind === 'nomination_started') {
+                    lines.push(t('nomination_history_started', {
+                        nominator: playerName(entry.nominator),
+                        nominee: playerName(entry.nominee),
+                    }));
+                } else if (entry.kind === 'voting_resolved') {
+                    const nominee = playerName(entry.nominee);
+                    const template = entry.passed ? 'nomination_history_vote_passed' : 'nomination_history_vote_failed';
+                    lines.push(t(template, {
+                        nominee,
+                        votes: entry.votes ?? 0,
+                        needed: entry.needed ?? nominationState.threshold ?? 0,
+                    }));
+                    const voters = Object.entries(entry.voters || {}).map(([playerId, decision]) => `${playerName(playerId)}${decision ? ' ✓' : ' ✗'}`);
+                    if (voters.length) {
+                        lines.push(`${t('nomination_voters')}: ${voters.join('、')}`);
+                    }
+                } else if (entry.kind === 'execution_resolved') {
+                    if (entry.executed) {
+                        lines.push(t('nomination_history_execution', { target: playerName(entry.executed) }));
+                    } else {
+                        lines.push(t('nomination_history_no_execution'));
+                    }
+                    if (entry.reason) {
+                        lines.push(t('nomination_history_execution_reason', { reason: entry.reason }));
+                    }
+                }
+
+                if (!lines.length) {
+                    lines.push('—');
+                }
+                lines.forEach((line) => {
+                    const div = document.createElement('div');
+                    div.textContent = line;
+                    card.appendChild(div);
+                });
+                container.appendChild(card);
             });
         }
 
@@ -976,7 +1153,9 @@
             const shouldShow = ['nomination', 'defense', 'voting', 'resolved', 'executed', 'window_open'].includes(nominationState.stage) || nominationHasDisplayData(nominationState);
             statusAttention = shouldShow;
             updateStatusTabAttention();
-            document.getElementById('nominationStateText').textContent = shouldShow
+            document.getElementById('nominationStateText').textContent = gameState.phase === 'game_over'
+                ? t('nomination_result_game_over')
+                : shouldShow
                 ? nominationStageText(nominationState.stage)
                 : t('nomination_none');
             renderNominationAlivePlayers(nominationState);
@@ -997,6 +1176,7 @@
             });
 
             renderNominationDetails(nominationState);
+            renderNominationHistory(nominationState);
         }
 
         function renderPrivateInfo() {
@@ -1037,6 +1217,7 @@
             container.innerHTML = '';
             
             const targetSelect = document.getElementById('targetSelect');
+            const previousTarget = targetSelect.value;
             targetSelect.innerHTML = `<option value="">${t('select_target')}</option>`;
 
             let selfPlayer = playerData.find(p => p.player_id === currentUserId);
@@ -1064,6 +1245,10 @@
                     targetSelect.appendChild(opt);
                 }
             });
+
+            if (previousTarget && Array.from(targetSelect.options).some((opt) => opt.value === previousTarget)) {
+                targetSelect.value = previousTarget;
+            }
         }
 
         function updatePhaseDisplay() {
@@ -1096,13 +1281,18 @@
             try {
                 const res = await fetch(`http://localhost:8000/api/game/state?player_id=${currentUserId}`);
                 const data = await res.json();
+                const previousGameId = currentGameId;
+                if (previousGameId !== data.game_id) {
+                    clearSessionArtifacts(data.game_id || null);
+                }
                 const previousDay = lastRenderedDayNumber;
                 const nextPrivateInfo = mergePrivateInfo(gameState.private_info, data.private_info);
                 gameState = {
                     ...data,
                     private_info: nextPrivateInfo
                 };
-                if (previousDay !== gameState.day_number) {
+                currentGameId = data.game_id || currentGameId;
+                if (previousDay !== gameState.day_number && previousGameId === currentGameId) {
                     nominationPromptKey = null;
                     cachedNominationState = null;
                 }
@@ -1124,10 +1314,17 @@
 
         function currentNominationPromptKey() {
             const round = gameState.nomination_state?.round ?? 0;
-            return `${gameState.day_number}:${round}`;
+            const gameKey = gameState.game_id || currentGameId || 'no-game';
+            return `${gameKey}:${gameState.day_number}:${round}`;
         }
 
         function handleEventUpdate(e) {
+            if (e?.game_id && currentGameId && e.game_id !== currentGameId) {
+                return;
+            }
+            if (e?.game_id && !currentGameId) {
+                clearSessionArtifacts(e.game_id);
+            }
             if (e.event_type === 'player_speaks') {
                 let prefix = e.payload.is_private ? `<span style="color:var(--error)">${t('evil_chat')}</span> ` : '';
                 logMessage(prefix + e.payload.content, e.actor === currentUserId ? 'self' : 'player', playerName(e.actor));
@@ -1150,6 +1347,12 @@
                 logMessage(`${t('voting_resolved')} (${e.payload?.votes || 0}/${e.payload?.needed || 0})`);
             } else if (e.event_type === 'execution_resolved') {
                 logMessage(e.payload.executed ? t('execution_result', { target: playerName(e.payload.executed) }) : t('no_execution'));
+            } else if (e.event_type === 'player_death') {
+                const reasonKey = e.payload?.reason ? `death_reason_${e.payload.reason}` : null;
+                const reasonText = reasonKey ? t(reasonKey) : e.payload?.reason;
+                logMessage(reasonText
+                    ? t('death_announcement_reason', { target: playerName(e.target), reason: reasonText })
+                    : t('death_announcement', { target: playerName(e.target) }));
             } else if (e.event_type === 'private_info_delivered') {
                 const lines = Array.isArray(e.payload.lines) ? e.payload.lines.join(' / ') : '';
                 logMessage(`${t('private_info_received', { title: e.payload.title || e.payload.type || 'Info' })}${lines ? ' ' + lines : ''}`);
@@ -1263,6 +1466,8 @@
                 promptType = `${t('nomination_stage_voting')} - ${playerName(gameState.nomination_state?.current_nominee)}`;
             } else if (type === 'nominate' || type === 'nomination_intent') {
                 promptType = t('nomination_open');
+            } else if (type === 'death_trigger') {
+                promptType = t('death_trigger_prompt');
             }
             document.getElementById('action-prompt').textContent = t('action_required', { type: promptType });
             document.getElementById('submitBtn').disabled = false;
@@ -1270,13 +1475,15 @@
             const textAction = type === 'speak' || type === 'defense_speech';
             document.getElementById('actionInput').style.display = textAction ? 'block' : 'none';
             document.getElementById('toneSelect').style.display = textAction ? 'block' : 'none';
-            document.getElementById('targetSelect').style.display = (type === 'night_action' || type === 'nominate' || type === 'nomination_intent') ? 'block' : 'none';
+            document.getElementById('targetSelect').style.display = (type === 'night_action' || type === 'death_trigger' || type === 'nominate' || type === 'nomination_intent') ? 'block' : 'none';
             document.getElementById('voteSelect').style.display = (type === 'vote') ? 'block' : 'none';
             document.getElementById('skipBtn').style.display = (type === 'speak') ? 'block' : 'none';
             if (type === 'defense_speech') {
                 logMessage(t('defense_prompt'));
             } else if (type === 'nominate' || type === 'nomination_intent') {
                 logMessage(t('nominate_prompt'));
+            } else if (type === 'death_trigger') {
+                logMessage(t('death_trigger_prompt'));
             }
         }
 
@@ -1306,7 +1513,15 @@
             if (pendingActionType === 'speak' || pendingActionType === 'defense_speech') {
                 payload.content = document.getElementById('actionInput').value;
                 payload.tone = document.getElementById('toneSelect').value;
-            } else if (pendingActionType === 'night_action' || pendingActionType === 'nominate' || pendingActionType === 'nomination_intent') {
+            } else if (pendingActionType === 'night_action' || pendingActionType === 'death_trigger') {
+                const target = document.getElementById('targetSelect').value;
+                if (target) {
+                    payload.action = pendingActionType;
+                    payload.target = target;
+                } else {
+                    payload.action = 'none';
+                }
+            } else if (pendingActionType === 'nominate' || pendingActionType === 'nomination_intent') {
                 const target = document.getElementById('targetSelect').value;
                 if (target) {
                     payload.action = 'nominate';
@@ -1329,6 +1544,7 @@
             document.getElementById('actionInput').value = '';
             document.getElementById('actionInput').style.display = 'block';
             document.getElementById('toneSelect').style.display = 'block';
+            document.getElementById('targetSelect').value = '';
             document.getElementById('targetSelect').style.display = 'none';
             document.getElementById('voteSelect').style.display = 'none';
         }

@@ -158,6 +158,94 @@ async def test_first_night_empath_receives_private_info():
 
 
 @pytest.mark.asyncio
+async def test_spy_receives_spy_book_on_first_and_later_nights():
+    initial_state = GameState(
+        phase=GamePhase.FIRST_NIGHT,
+        round_number=1,
+        seat_order=("s1", "g1", "g2"),
+        players=(
+            PlayerState(player_id="s1", name="Spy", role_id="spy", team=Team.EVIL),
+            PlayerState(player_id="g1", name="Chef", role_id="chef", team=Team.GOOD),
+            PlayerState(player_id="g2", name="Town", role_id="washerwoman", team=Team.GOOD),
+        ),
+    )
+    orch = GameOrchestrator(initial_state)
+    orch.storyteller_agent = DummyStoryteller()
+
+    await orch._distribute_night_info(GamePhase.FIRST_NIGHT)
+    await orch._distribute_night_info(GamePhase.NIGHT)
+
+    spy_events = [
+        event
+        for event in orch.event_log.events
+        if event.event_type == "private_info_delivered" and event.target == "s1"
+    ]
+    spy_payloads = [event.payload for event in spy_events if event.payload.get("type") == "spy_book"]
+    assert len(spy_payloads) >= 2
+    assert all(payload["book"] for payload in spy_payloads)
+
+
+@pytest.mark.asyncio
+async def test_first_night_spy_receives_grimoire_and_refreshes_state():
+    initial_state = GameState(
+        players=(
+            PlayerState(player_id="s1", name="Spy", role_id="spy", team=Team.EVIL),
+            PlayerState(player_id="i1", name="Imp", role_id="imp", team=Team.EVIL),
+            PlayerState(player_id="g1", name="Town", role_id="washerwoman", team=Team.GOOD),
+        ),
+        bluffs=("chef", "empath", "monk"),
+    )
+    orch = GameOrchestrator(initial_state)
+    orch.storyteller_agent = DummyStoryteller()
+
+    await orch._run_first_night()
+
+    spy_events = [
+        event for event in orch.event_log.events
+        if event.event_type == "private_info_delivered" and event.target == "s1"
+    ]
+    assert spy_events, "expected spy to receive private grimoire info"
+    assert spy_events[-1].payload["type"] == "spy_book"
+    assert orch.state.grimoire is not None
+    assert orch.state.grimoire.night_actions
+    assert any(
+        action["event_type"] == "private_info_delivered" and action["payload"].get("type") == "spy_book"
+        for action in orch.state.grimoire.night_actions
+    )
+
+
+@pytest.mark.asyncio
+async def test_later_night_spy_receives_updated_grimoire_info():
+    initial_state = GameState(
+        phase=GamePhase.NIGHT,
+        round_number=2,
+        players=(
+            PlayerState(player_id="s1", name="Spy", role_id="spy", team=Team.EVIL),
+            PlayerState(player_id="g1", name="Town", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="g2", name="Chef", role_id="chef", team=Team.GOOD),
+        ),
+        seat_order=("s1", "g1", "g2"),
+    )
+    orch = GameOrchestrator(initial_state)
+    orch.storyteller_agent = DummyStoryteller()
+
+    await orch._distribute_night_info(GamePhase.NIGHT)
+    orch._update_grimoire()
+
+    spy_events = [
+        event for event in orch.event_log.events
+        if event.event_type == "private_info_delivered" and event.target == "s1"
+    ]
+    assert spy_events, "expected spy to receive nightly grimoire info"
+    assert spy_events[-1].payload["type"] == "spy_book"
+    assert orch.state.grimoire is not None
+    assert any(
+        action["event_type"] == "private_info_delivered" and action["payload"].get("type") == "spy_book"
+        for action in orch.state.grimoire.night_actions
+    )
+
+
+@pytest.mark.asyncio
 async def test_fixed_info_roles_do_not_receive_night_action_request():
     initial_state = GameState(
         phase=GamePhase.FIRST_NIGHT,
@@ -261,6 +349,73 @@ async def test_nomination_intents_choose_first_legal_by_seat_order():
 
 
 @pytest.mark.asyncio
+async def test_audit_mode_nomination_fallback_chooses_first_legal_pair():
+    initial_state = GameState(
+        phase=GamePhase.NOMINATION,
+        players=(
+            PlayerState(player_id="p1", name="One", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Two", role_id="empath", team=Team.GOOD),
+            PlayerState(player_id="p3", name="Three", role_id="imp", team=Team.EVIL),
+        ),
+        seat_order=("p1", "p2", "p3"),
+        config=GameConfig(
+            player_count=3,
+            human_mode="none",
+            human_player_ids=(),
+            is_human_participant=False,
+            discussion_rounds=1,
+            max_nomination_rounds=1,
+            audit_mode=True,
+        ),
+    )
+    orch = GameOrchestrator(initial_state)
+    orch.storyteller_agent = DummyStoryteller()
+    orch.register_agent(ScriptedAgent("p1", "One", {"nomination_intent": [{"action": "none"}]}))
+    orch.register_agent(ScriptedAgent("p2", "Two", {"nomination_intent": [{"action": "none"}]}))
+    orch.register_agent(ScriptedAgent("p3", "Three", {"nomination_intent": [{"action": "none"}]}))
+
+    chosen = orch._select_nomination_intent(
+        {
+            "p1": {"action": "none"},
+            "p2": {"action": "none"},
+            "p3": {"action": "none"},
+        }
+    )
+
+    assert chosen == ("p1", "p2")
+
+
+@pytest.mark.asyncio
+async def test_ravenkeeper_death_trigger_delivers_private_info():
+    initial_state = GameState(
+        phase=GamePhase.NIGHT,
+        round_number=2,
+        players=(
+            PlayerState(player_id="r", name="Raven", role_id="ravenkeeper", team=Team.GOOD, is_alive=False),
+            PlayerState(player_id="i", name="Imp", role_id="imp", team=Team.EVIL),
+            PlayerState(player_id="g", name="Good", role_id="chef", team=Team.GOOD),
+        ),
+        seat_order=("r", "i", "g"),
+    )
+    orch = GameOrchestrator(initial_state)
+    orch.storyteller_agent = DummyStoryteller()
+    orch.register_agent(ScriptedAgent("r", "Raven", {
+        "death_trigger": [{"action": "death_trigger", "target": "i"}],
+    }))
+
+    await orch._resolve_on_death_triggers({"r", "i", "g"})
+
+    private_infos = [
+        event for event in orch.event_log.events
+        if event.event_type == "private_info_delivered" and event.target == "r"
+    ]
+    assert private_infos, "expected ravenkeeper to receive private info after death"
+    payload = private_infos[0].payload
+    assert payload["type"] == "ravenkeeper_info"
+    assert payload["role_seen"] == "imp"
+
+
+@pytest.mark.asyncio
 async def test_nomination_phase_supports_multiple_rounds_before_night():
     initial_state = GameState(
         phase=GamePhase.NOMINATION,
@@ -347,3 +502,18 @@ async def test_nomination_phase_supports_multiple_rounds_before_night():
     ]
     assert execution_events
     assert execution_events[-1].payload["executed"] == "p4"
+
+    event_types = [event.event_type for event in orch.event_log.events]
+    first_nomination_idx = event_types.index("nomination_started")
+    first_defense_idx = event_types.index("defense_started")
+    first_vote_idx = event_types.index("vote_cast")
+    first_voting_resolved_idx = event_types.index("voting_resolved")
+    first_execution_idx = event_types.index("execution_resolved")
+
+    assert first_nomination_idx < first_defense_idx < first_vote_idx < first_voting_resolved_idx < first_execution_idx
+    assert orch.state.current_nominator is None
+    assert orch.state.current_nominee is None
+    assert orch.state.payload["nomination_state"]["current_nominator"] is None
+    assert orch.state.payload["nomination_state"]["current_nominee"] is None
+    assert orch.state.payload["nomination_state"]["votes"] == {}
+    assert len(orch.state.payload["nomination_history"]) >= 4

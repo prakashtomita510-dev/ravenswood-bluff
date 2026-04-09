@@ -7,7 +7,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from src.state.game_state import GamePhase, GameState, PlayerState, Team
+from src.state.game_state import GameEvent, GamePhase, GameState, PlayerState, Team
 
 
 def make_client(monkeypatch):
@@ -25,6 +25,35 @@ def test_game_start_is_idempotent(monkeypatch):
         payload = response.json()
         assert payload["status"] == "ok"
         assert payload["already_running"] is True
+
+
+def test_game_state_and_metrics_include_game_id_and_reset_changes_session(monkeypatch):
+    with make_client(monkeypatch) as client:
+        setup = client.post(
+            "/api/game/setup",
+            json={
+                "player_count": 5,
+                "host_id": "h1",
+                "human_mode": "player",
+                "human_client_id": "h1",
+            },
+        )
+        assert setup.status_code == 200
+        assert setup.json()["status"] == "ok"
+
+        state_before = client.get("/api/game/state", params={"player_id": "h1"}).json()
+        metrics_before = client.get("/api/game/metrics").json()
+        assert state_before["game_id"]
+        assert state_before["game_id"] == metrics_before["game_id"]
+
+        reset = client.post("/api/game/reset", json={"backend_mode": "mock"})
+        assert reset.status_code == 200
+
+        state_after = client.get("/api/game/state", params={"player_id": "h1"}).json()
+        metrics_after = client.get("/api/game/metrics").json()
+        assert state_after["game_id"]
+        assert state_after["game_id"] == metrics_after["game_id"]
+        assert state_after["game_id"] != state_before["game_id"]
 
 
 def test_metrics_expose_backend_and_nomination_flow(monkeypatch):
@@ -55,6 +84,22 @@ def test_metrics_expose_backend_and_nomination_flow(monkeypatch):
         assert metrics["legal_nomination_count"] >= 1
         assert metrics["vote_count"] >= 1
         assert metrics["execution_count"] >= 1
+
+
+def test_decorated_ws_message_includes_game_id(monkeypatch):
+    monkeypatch.setenv("BOTC_BACKEND", "mock")
+    import src.api.server as server_module
+
+    server_module = importlib.reload(server_module)
+    orchestrator = server_module.build_fresh_orchestrator("mock")
+    message = json.dumps({"type": "event_update", "event": {"event_type": "phase_changed"}}, ensure_ascii=False)
+
+    decorated = server_module.decorate_ws_message_with_game_id(message, orchestrator)
+    payload = json.loads(decorated)
+
+    assert payload["game_id"] == orchestrator.state.game_id
+    assert payload["type"] == "event_update"
+    assert payload["event"]["event_type"] == "phase_changed"
 
 
 def test_player_mode_cannot_view_grimoire(monkeypatch):
@@ -130,7 +175,23 @@ def test_build_nomination_state_preserves_payload_vote_details(monkeypatch):
                 "votes": {"p1": True, "p2": False},
                 "defense_text": "I am not the demon.",
                 "last_result": {"executed": None, "votes": 1},
-            }
+            },
+            "nomination_history": [
+                {
+                    "kind": "nomination_started",
+                    "round": 2,
+                    "nominator": "p1",
+                    "nominee": "p2",
+                },
+                {
+                    "kind": "voting_resolved",
+                    "round": 2,
+                    "nominee": "p2",
+                    "votes": 1,
+                    "needed": 2,
+                    "passed": False,
+                },
+            ],
         },
     )
 
@@ -144,6 +205,56 @@ def test_build_nomination_state_preserves_payload_vote_details(monkeypatch):
     assert nomination_state["votes_cast"] == 2
     assert nomination_state["yes_votes"] == 1
     assert nomination_state["defense_text"] == "I am not the demon."
+    assert nomination_state["result_phase"] == "vote_resolved"
+    assert nomination_state["history"][0]["kind"] == "nomination_started"
+    assert nomination_state["history"][1]["kind"] == "voting_resolved"
+
+
+def test_build_nomination_state_infers_history_from_event_log(monkeypatch):
+    monkeypatch.setenv("BOTC_BACKEND", "mock")
+    import src.api.server as server_module
+
+    server_module = importlib.reload(server_module)
+    orchestrator = server_module.build_fresh_orchestrator("mock")
+    orchestrator.state = GameState(
+        phase=GamePhase.EXECUTION,
+        players=(
+            PlayerState(player_id="p1", name="One", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Two", role_id="imp", team=Team.EVIL),
+        ),
+        event_log=(
+            GameEvent(
+                event_type="nomination_started",
+                phase=GamePhase.NOMINATION,
+                round_number=1,
+                actor="p1",
+                target="p2",
+            ),
+            GameEvent(
+                event_type="voting_resolved",
+                phase=GamePhase.VOTING,
+                round_number=1,
+                target="p2",
+                payload={"votes": 2, "needed": 2, "passed": True},
+            ),
+            GameEvent(
+                event_type="execution_resolved",
+                phase=GamePhase.EXECUTION,
+                round_number=1,
+                target="p2",
+                payload={"executed": "p2", "votes": 2},
+            ),
+        ),
+        payload={"nomination_state": {"stage": "executed", "last_result": {"executed": "p2", "votes": 2}}},
+    )
+
+    nomination_state = server_module.build_nomination_state(orchestrator)
+
+    assert [entry["kind"] for entry in nomination_state["history"]] == [
+        "nomination_started",
+        "voting_resolved",
+        "execution_resolved",
+    ]
 
 
 @pytest.mark.asyncio

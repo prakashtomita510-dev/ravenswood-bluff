@@ -241,6 +241,23 @@ def test_mayor_night_kill_redirects_to_another_alive_player() -> None:
     assert events[0].payload["resolved_target_role"] == "chef"
 
 
+def test_mayor_redirection_prefers_non_mayor_non_killer_alive_player() -> None:
+    role = get_role_class("imp")()
+    state = GameState(
+        phase=GamePhase.NIGHT,
+        players=(
+            make_player("i", "Imp", "imp", Team.EVIL),
+            make_player("m", "Mayor", "mayor", Team.GOOD),
+            make_player("g1", "Good1", "chef", Team.GOOD),
+            make_player("g2", "Good2", "empath", Team.GOOD),
+        ),
+    )
+
+    target = get_role_class("mayor").choose_redirection_target(state, mayor_player_id="m", killer_id="i")
+
+    assert target == "g1"
+
+
 def test_recluse_registers_as_demon_for_fortune_teller() -> None:
     role = get_role_class("fortune_teller")()
     state = GameState(

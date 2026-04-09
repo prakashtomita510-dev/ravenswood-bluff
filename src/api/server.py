@@ -184,6 +184,7 @@ def collect_metrics(orchestrator: GameOrchestrator) -> dict[str, Any]:
 
     backend = orchestrator.default_agent_backend
     return {
+        "game_id": state.game_id,
         "backend": {
             "type": backend.__class__.__name__ if backend else None,
             "model": backend.get_model_name() if backend else None,
@@ -243,16 +244,45 @@ def build_private_info_list(orchestrator: GameOrchestrator, player_id: str | Non
 def build_nomination_state(orchestrator: GameOrchestrator) -> dict[str, Any]:
     state = orchestrator.state
     nomination_state = dict(state.payload.get("nomination_state", {}))
+    nomination_state.setdefault("game_id", state.game_id)
     nomination_state.setdefault("stage", "idle")
-    if state.current_nominator is not None:
+    terminal_stage = nomination_state.get("stage", "idle") in {"executed", "no_nomination", "invalid_nomination"}
+    terminal_result = nomination_state.get("result_phase") in {"execution_resolved", "no_nomination", "invalid_nomination"}
+    if "result_phase" not in nomination_state:
+        stage = nomination_state.get("stage", "idle")
+        inferred_phase = {
+            "no_nomination": "no_nomination",
+            "invalid_nomination": "invalid_nomination",
+            "resolved": "vote_resolved",
+            "executed": "execution_resolved",
+            "window_open": "window_open",
+            "nomination": "nomination_started",
+            "defense": "defense_started",
+            "voting": "vote_resolved",
+        }.get(stage)
+        if inferred_phase:
+            nomination_state["result_phase"] = inferred_phase
+    if terminal_stage or terminal_result:
+        nomination_state["current_nominator"] = None
+        nomination_state["current_nominee"] = None
+        nomination_state["votes_cast"] = 0
+        nomination_state["yes_votes"] = 0
+        nomination_state["votes"] = {}
+    elif state.current_nominator is not None:
         nomination_state["current_nominator"] = state.current_nominator
     else:
         nomination_state.setdefault("current_nominator", None)
-    if state.current_nominee is not None:
+    if terminal_stage or terminal_result:
+        nomination_state["current_nominee"] = None
+    elif state.current_nominee is not None:
         nomination_state["current_nominee"] = state.current_nominee
     else:
         nomination_state.setdefault("current_nominee", None)
-    if state.votes_today:
+    if terminal_stage or terminal_result:
+        nomination_state["votes_cast"] = 0
+        nomination_state["yes_votes"] = 0
+        nomination_state["votes"] = {}
+    elif state.votes_today:
         nomination_state["votes_cast"] = len(state.votes_today)
         nomination_state["yes_votes"] = sum(1 for vote in state.votes_today.values() if vote)
         nomination_state["votes"] = dict(state.votes_today)
@@ -260,8 +290,60 @@ def build_nomination_state(orchestrator: GameOrchestrator) -> dict[str, Any]:
         nomination_state.setdefault("votes_cast", 0)
         nomination_state.setdefault("yes_votes", 0)
         nomination_state.setdefault("votes", {})
+    history = list(state.payload.get("nomination_history", []))
+    if not history:
+        inferred_history: list[dict[str, Any]] = []
+        for event in state.event_log:
+            if event.event_type == "nomination_started":
+                inferred_history.append(
+                    {
+                        "kind": "nomination_started",
+                        "round": len([item for item in inferred_history if item.get("kind") == "nomination_started"]) + 1,
+                        "nominator": event.actor,
+                        "nominee": event.target,
+                        "trace_id": event.trace_id,
+                    }
+                )
+            elif event.event_type == "voting_resolved":
+                inferred_history.append(
+                    {
+                        "kind": "voting_resolved",
+                        "round": len([item for item in inferred_history if item.get("kind") == "voting_resolved"]) + 1,
+                        "nominee": event.target,
+                        "votes": event.payload.get("votes"),
+                        "needed": event.payload.get("needed"),
+                        "passed": event.payload.get("passed"),
+                        "trace_id": event.trace_id,
+                    }
+                )
+            elif event.event_type == "execution_resolved":
+                inferred_history.append(
+                    {
+                        "kind": "execution_resolved",
+                        "round": len([item for item in inferred_history if item.get("kind") == "execution_resolved"]) + 1,
+                        "executed": event.payload.get("executed"),
+                        "votes": event.payload.get("votes"),
+                        "reason": event.payload.get("reason"),
+                        "trace_id": event.trace_id,
+                    }
+                )
+        history = inferred_history[-12:]
+    nomination_state["history"] = history
     nomination_state["threshold"] = (state.alive_count // 2) + 1 if state.alive_count else 0
     return nomination_state
+
+
+def decorate_ws_message_with_game_id(message: str, orchestrator: GameOrchestrator | None) -> str:
+    if not orchestrator:
+        return message
+    try:
+        payload = json.loads(message)
+    except Exception:
+        return message
+    if not isinstance(payload, dict):
+        return message
+    payload["game_id"] = orchestrator.state.game_id
+    return json.dumps(payload, ensure_ascii=False)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -309,11 +391,13 @@ async def root_redirect():
 @app.websocket("/ws/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, player_id: str):
     await manager.connect(websocket, player_id)
+    async def send_message_with_session(message: str) -> None:
+        await manager.send_personal_message(decorate_ws_message_with_game_id(message, global_orchestrator), player_id)
     if player_id not in human_agents:
         agent = HumanAgent(
             player_id=player_id, 
             name=f"Human_{player_id}", 
-            send_message_callback=lambda msg: manager.send_personal_message(msg, player_id),
+            send_message_callback=send_message_with_session,
             chat_callback=global_orchestrator.handle_chat if global_orchestrator else None
         )
         human_agents[player_id] = agent
@@ -421,6 +505,7 @@ async def get_game_state(player_id: str = None):
     is_observer = viewer_mode == "observer"
     
     data = {
+        "game_id": state.game_id,
         "round_number": state.round_number,
         "day_number": state.day_number,
         "phase": state.phase.value,

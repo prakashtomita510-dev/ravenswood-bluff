@@ -194,6 +194,7 @@ class AIAgent(BaseAgent):
             "vote": "你的任务是投票。请让决定符合你的性格和局势判断，不要每次都像同一模板。",
             "defense_speech": "你是被提名者。请像真人一样辩解，语气要贴合你的性格。",
             "night_action": "你在夜晚执行角色能力。请选择符合角色和局势的目标，语气保持自然。",
+            "death_trigger": "你刚刚因为夜晚死亡而触发角色能力。请选择合适目标并自然表达。",
         }
         return f"""【稳定人格锚点】
 - 角色名: {profile.get('role_name', get_role_name(self.true_role_id or self.role_id or 'unknown'))}
@@ -342,7 +343,7 @@ class AIAgent(BaseAgent):
             )
         if action_type == "defense_speech":
             return "你是被提名者，需要进行简短辩解。请返回 action=speak 和一段自然中文。"
-        if action_type == "night_action":
+        if action_type in {"night_action", "death_trigger"}:
             legal_targets = self._legal_night_targets(game_state)
             if legal_targets:
                 return f"优先从这些存活玩家里选择目标：{', '.join(legal_targets)}。"
@@ -519,7 +520,7 @@ class AIAgent(BaseAgent):
 
         return max(0.0, min(1.0, score))
 
-    def _select_nomination_target(self, game_state: GameState) -> tuple[str, float, float] | None:
+    def _select_nomination_target(self, game_state: GameState, intent_mode: bool = False) -> tuple[str, float, float] | None:
         legal_targets = self._legal_nomination_targets(game_state)
         if not legal_targets:
             return None
@@ -531,9 +532,14 @@ class AIAgent(BaseAgent):
         best_score, best_target = scored_targets[0]
         runner_up_score = scored_targets[1][0] if len(scored_targets) > 1 else 0.0
         threshold = self._nomination_threshold(game_state)
+        if intent_mode:
+            threshold = max(0.25, threshold - 0.30)
+            margin = max(0.01, self._nomination_margin() - 0.03)
+        else:
+            margin = self._nomination_margin()
         if best_score < threshold:
             return None
-        if len(scored_targets) > 1 and (best_score - runner_up_score) < self._nomination_margin():
+        if len(scored_targets) > 1 and (best_score - runner_up_score) < margin:
             return None
         return best_target, best_score, threshold
 
@@ -613,11 +619,11 @@ class AIAgent(BaseAgent):
                     "reasoning": f"兜底提名，按稳定人格选择最顺手的目标。({reason})",
                 }
             return {"action": "none", "target": None, "reasoning": f"当前没有合法提名目标。({reason})"}
-        if action_type == "night_action":
+        if action_type in {"night_action", "death_trigger"}:
             legal_targets = self._legal_night_targets(game_state)
             target = self._stable_choice(legal_targets, game_state, action_type, "night") if legal_targets else None
             return {
-                "action": "night_action",
+                "action": action_type,
                 "target": target,
                 "reasoning": f"兜底夜晚行动，按稳定人格选择目标。({reason})",
             }
@@ -646,18 +652,32 @@ class AIAgent(BaseAgent):
         tone = str(decision.get("tone", "calm"))
 
         if action_type in {"nominate", "nomination_intent"}:
-            selection = self._select_nomination_target(game_state)
-            if not selection:
+            selection = self._select_nomination_target(game_state, intent_mode=(action_type == "nomination_intent"))
+            if not selection and action_type == "nomination_intent":
                 return self._fallback_decision(game_state, action_type, reason="nomination_below_threshold")
 
-            best_target, best_score, threshold = selection
-            chosen_target = best_target
-            chosen_score = best_score
-            target = decision.get("target")
             legal_targets = self._legal_nomination_targets(game_state)
+            if action_type == "nominate" and not selection:
+                if not legal_targets:
+                    return {"action": "none", "target": None, "reasoning": "当前没有合法提名目标。"}
+                chosen_target = max(
+                    legal_targets,
+                    key=lambda candidate: (self._target_signal_score(game_state, candidate), candidate),
+                )
+                chosen_score = self._target_signal_score(game_state, chosen_target)
+                threshold = self._nomination_threshold(game_state)
+                compare_score = chosen_score
+            else:
+                assert selection is not None
+                best_target, best_score, threshold = selection
+                chosen_target = best_target
+                chosen_score = best_score
+                compare_score = best_score
+
+            target = decision.get("target")
             if decision.get("action") == "nominate" and target in legal_targets:
                 target_score = self._target_signal_score(game_state, target)
-                if target_score >= threshold and abs(target_score - best_score) <= 0.05:
+                if target_score >= threshold and abs(target_score - compare_score) <= 0.05:
                     chosen_target = target
                     chosen_score = target_score
 
@@ -688,11 +708,11 @@ class AIAgent(BaseAgent):
             content = str(decision.get("content", "")).strip() or "我是好人，请再想一想。"
             return {"action": "speak", "content": content, "tone": tone, "reasoning": reasoning}
 
-        if action_type == "night_action":
+        if action_type in {"night_action", "death_trigger"}:
             target = decision.get("target")
             legal_targets = self._legal_night_targets(game_state)
-            if decision.get("action") == "night_action" and (target in legal_targets or target is None):
-                return {"action": "night_action", "target": target, "reasoning": reasoning}
+            if decision.get("action") in {"night_action", "death_trigger"} and (target in legal_targets or target is None):
+                return {"action": action_type, "target": target, "reasoning": reasoning}
             return self._fallback_decision(game_state, action_type, reason="illegal_night_target")
 
         if decision.get("action") == "skip_discussion":
@@ -706,7 +726,7 @@ class AIAgent(BaseAgent):
     def _fallback_decision(self, game_state: GameState, action_type: str, reason: str) -> dict[str, Any]:
         fallback = self._persona_fallback_speech(action_type, reason, game_state)
         if action_type in {"nominate", "nomination_intent"}:
-            selection = self._select_nomination_target(game_state)
+            selection = self._select_nomination_target(game_state, intent_mode=(action_type == "nomination_intent"))
             if selection:
                 target, score, threshold = selection
                 return {
@@ -714,6 +734,34 @@ class AIAgent(BaseAgent):
                     "target": target,
                     "reasoning": f"兜底提名，按稳定人格选择更可疑的目标。({reason}) | 怀疑度={score:.2f} 阈值={threshold:.2f}",
                 }
+            if action_type == "nomination_intent":
+                legal_targets = self._legal_nomination_targets(game_state)
+                if legal_targets:
+                    target = max(
+                        legal_targets,
+                        key=lambda candidate: (self._target_signal_score(game_state, candidate), candidate),
+                    )
+                    score = self._target_signal_score(game_state, target)
+                    if score >= 0.18:
+                        return {
+                            "action": "nominate",
+                            "target": target,
+                            "reasoning": f"兜底提名，局势足够可疑，主动推动提名。({reason}) | 怀疑度={score:.2f}",
+                        }
+            if action_type == "nominate":
+                legal_targets = self._legal_nomination_targets(game_state)
+                if legal_targets:
+                    target = max(
+                        legal_targets,
+                        key=lambda candidate: (self._target_signal_score(game_state, candidate), candidate),
+                    )
+                    score = self._target_signal_score(game_state, target)
+                    threshold = self._nomination_threshold(game_state)
+                    return {
+                        "action": "nominate",
+                        "target": target,
+                        "reasoning": f"兜底提名，当前证据不足但仍选择一个合法目标。({reason}) | 怀疑度={score:.2f} 阈值={threshold:.2f}",
+                    }
             return {"action": "none", "target": None, "reasoning": fallback.get("reasoning", f"当前没有合法提名目标。({reason})")}
         if action_type == "vote":
             vote, suspicion, threshold = self._select_vote_decision(game_state, None)
@@ -724,11 +772,11 @@ class AIAgent(BaseAgent):
             }
         if action_type == "defense_speech":
             return fallback
-        if action_type == "night_action":
+        if action_type in {"night_action", "death_trigger"}:
             if fallback.get("target", None) is not None or not self._legal_night_targets(game_state):
                 return fallback
             return {
-                "action": "night_action",
+                "action": action_type,
                 "target": None,
                 "reasoning": fallback.get("reasoning", f"兜底夜晚行动。({reason})"),
             }

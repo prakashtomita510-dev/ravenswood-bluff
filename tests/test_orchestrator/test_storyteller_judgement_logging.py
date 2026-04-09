@@ -21,7 +21,7 @@ from src.engine.roles.townsfolk import (
     WasherwomanRole,
 )
 from src.orchestrator.game_loop import GameOrchestrator
-from src.state.game_state import GameConfig, GameEvent, GamePhase, GameState, PlayerState, Team, Visibility
+from src.state.game_state import GameConfig, GameEvent, GamePhase, GameState, PlayerState, PlayerStatus, Team, Visibility
 
 
 class ScriptedAgent(BaseAgent):
@@ -361,6 +361,161 @@ async def test_fixed_info_roles_flow_through_storyteller_build_contract(
     assert recent[-1]["category"] == "night_info"
     assert recent[-1]["decision"] == "deliver"
     assert recent[-1]["source"] == "build_storyteller_info"
+    assert recent[-1]["bucket"] == "night_info.fixed_info"
     content = Path("storyteller_run.log").read_text(encoding="utf-8")
     assert "[judgement][night_info]" in content
+    _close_workspace_handlers(workspace)
+
+
+@pytest.mark.asyncio
+async def test_storyteller_marks_suppressed_fixed_info_as_distorted_bucket(monkeypatch):
+    workspace = Path.cwd() / "_storyteller_judgement_workspace"
+    workspace.mkdir(exist_ok=True)
+    monkeypatch.chdir(workspace)
+    module = importlib.reload(storyteller_module)
+    agent = module.StorytellerAgent(MockBackend())
+
+    state = GameState(
+        phase=GamePhase.FIRST_NIGHT,
+        round_number=1,
+        players=(
+            PlayerState(
+                player_id="p1",
+                name="Empath",
+                role_id="empath",
+                team=Team.GOOD,
+                statuses=(PlayerStatus.ALIVE, PlayerStatus.DRUNK),
+            ),
+            PlayerState(player_id="p2", name="Imp", role_id="imp", team=Team.EVIL),
+            PlayerState(player_id="p3", name="Town", role_id="washerwoman", team=Team.GOOD),
+        ),
+        seat_order=("p1", "p2", "p3"),
+    )
+
+    info = await agent.decide_night_info(state, "p1", "empath")
+
+    recent = agent.get_recent_judgements(5)
+    assert info
+    assert recent[-1]["category"] == "night_info"
+    assert recent[-1]["decision"] == "suppressed"
+    assert recent[-1]["bucket"] == "night_info.fixed_info.suppressed"
+    assert recent[-1]["scope"] == "fixed_info.suppressed"
+    _close_workspace_handlers(workspace)
+
+
+@pytest.mark.asyncio
+async def test_storyteller_marks_suppressed_investigator_as_consistent_false_info(monkeypatch):
+    workspace = Path.cwd() / "_storyteller_judgement_workspace"
+    workspace.mkdir(exist_ok=True)
+    monkeypatch.chdir(workspace)
+    module = importlib.reload(storyteller_module)
+    agent = module.StorytellerAgent(MockBackend())
+
+    state = GameState(
+        phase=GamePhase.FIRST_NIGHT,
+        round_number=1,
+        seat_order=("p1", "p2", "p3", "p4"),
+        players=(
+            PlayerState(
+                player_id="p1",
+                name="Inv",
+                role_id="investigator",
+                team=Team.GOOD,
+                statuses=(PlayerStatus.ALIVE, PlayerStatus.DRUNK),
+            ),
+            PlayerState(player_id="p2", name="Minion", role_id="spy", team=Team.EVIL),
+            PlayerState(player_id="p3", name="Town", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p4", name="Imp", role_id="imp", team=Team.EVIL),
+        ),
+    )
+
+    info = await agent.decide_night_info(state, "p1", "investigator")
+
+    recent = agent.get_recent_judgements(5)
+    assert info["type"] == "investigator_info"
+    assert recent[-1]["category"] == "night_info"
+    assert recent[-1]["decision"] == "suppressed"
+    assert recent[-1]["bucket"] == "night_info.fixed_info.suppressed"
+    asserted_roles = {
+        (state.get_player(pid).true_role_id or state.get_player(pid).role_id)
+        for pid in info["players"]
+        if state.get_player(pid)
+    }
+    assert info["role_seen"] not in asserted_roles
+    _close_workspace_handlers(workspace)
+
+
+@pytest.mark.asyncio
+async def test_storyteller_distorts_investigator_role_seen_when_suppressed(monkeypatch):
+    workspace = Path.cwd() / "_storyteller_judgement_workspace"
+    workspace.mkdir(exist_ok=True)
+    monkeypatch.chdir(workspace)
+    module = importlib.reload(storyteller_module)
+    agent = module.StorytellerAgent(MockBackend())
+
+    state = GameState(
+        phase=GamePhase.FIRST_NIGHT,
+        round_number=1,
+        players=(
+            PlayerState(
+                player_id="p1",
+                name="Investigator",
+                role_id="investigator",
+                team=Team.GOOD,
+                statuses=(PlayerStatus.ALIVE, PlayerStatus.POISONED),
+            ),
+            PlayerState(player_id="p2", name="Minion", role_id="spy", team=Team.EVIL),
+            PlayerState(player_id="p3", name="Town", role_id="washerwoman", team=Team.GOOD),
+        ),
+        seat_order=("p1", "p2", "p3"),
+    )
+
+    info = await agent.decide_night_info(state, "p1", "investigator")
+
+    assert info["type"] == "investigator_info"
+    assert info["role_seen"] != "spy"
+    assert len(info["players"]) == 2
+    assert "p1" not in info["players"]
+    recent = agent.get_recent_judgements(5)
+    assert recent[-1]["bucket"] == "night_info.fixed_info.suppressed"
+    _close_workspace_handlers(workspace)
+
+
+@pytest.mark.asyncio
+async def test_storyteller_distorts_spy_book_when_suppressed(monkeypatch):
+    workspace = Path.cwd() / "_storyteller_judgement_workspace"
+    workspace.mkdir(exist_ok=True)
+    monkeypatch.chdir(workspace)
+    module = importlib.reload(storyteller_module)
+    agent = module.StorytellerAgent(MockBackend())
+
+    state = GameState(
+        phase=GamePhase.NIGHT,
+        round_number=2,
+        players=(
+            PlayerState(player_id="p1", name="Town", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(
+                player_id="p2",
+                name="Spy",
+                role_id="spy",
+                team=Team.EVIL,
+                statuses=(PlayerStatus.ALIVE, PlayerStatus.DRUNK),
+            ),
+            PlayerState(player_id="p3", name="Imp", role_id="imp", team=Team.EVIL),
+            PlayerState(player_id="p4", name="Lib", role_id="librarian", team=Team.GOOD),
+        ),
+        seat_order=("p1", "p2", "p3", "p4"),
+    )
+
+    info = await agent.decide_night_info(state, "p2", "spy")
+    expected_book = SpyRole().build_storyteller_info(state, state.get_player("p2"))
+
+    assert info["type"] == "spy_book"
+    assert len(info["book"]) == len(expected_book["book"])
+    assert any(
+        original["role_id"] != changed["role_id"] or original["team"] != changed["team"]
+        for original, changed in zip(expected_book["book"], info["book"])
+    )
+    recent = agent.get_recent_judgements(5)
+    assert recent[-1]["bucket"] == "night_info.fixed_info.suppressed"
     _close_workspace_handlers(workspace)

@@ -137,18 +137,44 @@ class NominationManager:
                 payload={"executed": None},
                 visibility=Visibility.PUBLIC,
             )
-            new_state = game_state.with_update(phase=GamePhase.EXECUTION).with_event(event)
+            new_state = game_state.with_update(
+                phase=GamePhase.EXECUTION,
+                current_nominator=None,
+                current_nominee=None,
+                votes_today={},
+                execution_candidates=(),
+            ).with_event(event)
             return new_state, [event]
 
         nominee = game_state.get_player(candidate.nominee_id)
         payload = {"executed": candidate.nominee_id, "votes": candidate.votes}
-        new_state = game_state.with_update(phase=GamePhase.EXECUTION)
+        new_state = game_state.with_update(
+            phase=GamePhase.EXECUTION,
+            current_nominator=None,
+            current_nominee=None,
+            votes_today={},
+            execution_candidates=(),
+        )
         if nominee:
             new_state = new_state.with_player_update(candidate.nominee_id, is_alive=False)
             if nominee.true_role_id == "saint":
                 from src.state.game_state import Team
                 new_state = new_state.with_update(winning_team=Team.EVIL)
                 payload["saint_triggered"] = True
+
+        events: list[GameEvent] = []
+        if nominee:
+            death_event = GameEvent(
+                event_type="player_death",
+                phase=GamePhase.EXECUTION,
+                round_number=game_state.round_number,
+                trace_id=trace_id,
+                target=candidate.nominee_id,
+                payload={"reason": "execution"},
+                visibility=Visibility.PUBLIC,
+            )
+            new_state = new_state.with_event(death_event)
+            events.append(death_event)
 
         event = GameEvent(
             event_type="execution_resolved",
@@ -159,4 +185,6 @@ class NominationManager:
             payload=payload,
             visibility=Visibility.PUBLIC,
         )
-        return new_state.with_event(event), [event]
+        new_state = new_state.with_event(event)
+        events.append(event)
+        return new_state, events

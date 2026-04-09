@@ -116,4 +116,7 @@ class TestNominationManager:
         )
         new_state, events = NominationManager.finalize_execution(state)
         assert new_state.winning_team == Team.EVIL
-        assert events[0].payload["saint_triggered"] is True
+        assert events[0].event_type == "player_death"
+        assert events[0].payload["reason"] == "execution"
+        assert events[1].event_type == "execution_resolved"
+        assert events[1].payload["saint_triggered"] is True
