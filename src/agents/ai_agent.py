@@ -81,7 +81,7 @@ class AIAgent(BaseAgent):
         return options[index]
 
     def _refresh_persona_profile(self) -> None:
-        role_id = self.true_role_id or self.role_id or "unknown"
+        role_id = self.role_id or "unknown"
         role_name = get_role_name(role_id)
         role_description = get_role_description(role_id, fallback="普通玩家")
         role_hint = get_role_persona_hint(role_id, fallback="保持自然、连贯且像真人。")
@@ -197,8 +197,8 @@ class AIAgent(BaseAgent):
             "death_trigger": "你刚刚因为夜晚死亡而触发角色能力。请选择合适目标并自然表达。",
         }
         return f"""【稳定人格锚点】
-- 角色名: {profile.get('role_name', get_role_name(self.true_role_id or self.role_id or 'unknown'))}
-- 角色说明: {profile.get('role_description', get_role_description(self.true_role_id or self.role_id or 'unknown'))}
+- 角色名: {profile.get('role_name', get_role_name(self.role_id or 'unknown'))}
+- 角色说明: {profile.get('role_description', get_role_description(self.role_id or 'unknown'))}
 - 个性提示: {self.persona.description}
 - 说话风格: {self.persona.speaking_style}
 - 人格签名: {profile.get('signature', self.persona_signature or 'unknown')}
@@ -221,7 +221,7 @@ class AIAgent(BaseAgent):
             self.name,
             action_type,
             self.persona_signature or "unknown",
-            self.true_role_id or self.role_id or "unknown",
+            self.role_id or "unknown",
         )
 
         self._prime_social_graph_from_state(game_state)
@@ -230,7 +230,7 @@ class AIAgent(BaseAgent):
             f"{p.name}({p.player_id},{'alive' if p.is_alive else 'dead'})"
             for p in game_state.players
         )
-        perceived_role = self.perceived_role_id or self.fake_role or self.role_id
+        perceived_role = self.perceived_role_id or self.role_id
         action_context = self._build_action_context(game_state, action_type)
         persona_block = self._build_persona_prompt_block(action_type)
 
@@ -564,7 +564,7 @@ class AIAgent(BaseAgent):
             return ""
         digest = self._stable_hash(
             self.player_id,
-            self.true_role_id or self.role_id or "unknown",
+            self.role_id or "unknown",
             game_state.round_number,
             game_state.day_number,
             action_type,

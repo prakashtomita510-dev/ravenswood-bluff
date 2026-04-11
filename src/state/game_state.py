@@ -217,20 +217,14 @@ class ChatMessage(BaseModel):
 
 
 class PrivatePlayerView(BaseModel):
-    """同步给 Agent 的私有视角快照"""
+    """同步给 Agent 的私有视角快照（已剥离所有上帝视角）"""
 
     player_id: str
     name: str
-    true_role_id: str
     perceived_role_id: str
     public_claim_role_id: Optional[str] = None
     current_team: Team
-    fake_role: Optional[str] = None
     is_alive: bool = True
-    is_poisoned: bool = False
-    is_drunk: bool = False
-    storyteller_notes: tuple[str, ...] = ()
-    ongoing_effects: tuple[str, ...] = ()
 
 
 class ExecutionCandidate(BaseModel):

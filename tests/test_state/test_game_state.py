@@ -248,10 +248,9 @@ class TestPrivatePlayerView:
         view = PrivatePlayerView(
             player_id="p1",
             name="张三",
-            true_role_id="drunken",
             perceived_role_id="washerwoman",
             current_team=Team.GOOD,
-            is_drunk=True,
+            is_alive=True,
         )
-        assert view.true_role_id == "drunken"
+        assert getattr(view, "true_role_id", None) is None
         assert view.perceived_role_id == "washerwoman"

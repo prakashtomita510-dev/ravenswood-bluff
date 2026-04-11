@@ -299,3 +299,199 @@ def test_ravenkeeper_reads_true_role_on_death_trigger() -> None:
     assert len(events) == 1
     assert events[0].event_type == "night_info"
     assert events[0].payload["role_seen"] == "poisoner"
+
+
+def test_scarlet_woman_triggers_on_execution_with_5_players() -> None:
+    from src.engine.roles.minions import ScarletWomanRole
+    state = GameState(
+        phase=GamePhase.NIGHT,
+        players=(
+            make_player("i", "Imp", "imp", Team.EVIL),
+            make_player("s", "Scarlet", "scarlet_woman", Team.EVIL),
+            make_player("g1", "Good1", "chef", Team.GOOD),
+            make_player("g2", "Good2", "empath", Team.GOOD),
+            make_player("g3", "Good3", "mayor", Team.GOOD),
+        ),
+    )
+    post_death = state.with_player_update("i", is_alive=False)
+    new_state, events = ScarletWomanRole.check_and_transfer(state, post_death, "i", "trace-test")
+    assert new_state.get_player("s").role_id == "imp"
+    assert new_state.get_player("s").current_team == Team.EVIL
+    assert len(events) == 1
+    assert events[0].event_type == "role_transfer"
+
+
+def test_scarlet_woman_fails_on_execution_with_less_than_5_players() -> None:
+    from src.engine.roles.minions import ScarletWomanRole
+    state = GameState(
+        phase=GamePhase.NIGHT,
+        players=(
+            make_player("i", "Imp", "imp", Team.EVIL),
+            make_player("s", "Scarlet", "scarlet_woman", Team.EVIL),
+            make_player("g1", "Good1", "chef", Team.GOOD),
+            make_player("g2", "Good2", "empath", Team.GOOD, is_alive=False),
+            make_player("g3", "Good3", "mayor", Team.GOOD, is_alive=False),
+        ),
+    )
+    post_death = state.with_player_update("i", is_alive=False)
+    new_state, events = ScarletWomanRole.check_and_transfer(state, post_death, "i", "trace-test")
+    assert new_state.get_player("s").role_id == "scarlet_woman"
+    assert len(events) == 0
+
+
+def test_mayor_wins_with_3_players_and_no_execution() -> None:
+    from src.engine.victory_checker import VictoryChecker
+    state = GameState(
+        phase=GamePhase.NIGHT,
+        round_number=1,
+        players=(
+            make_player("i", "Imp", "imp", Team.EVIL),
+            make_player("m", "Mayor", "mayor", Team.GOOD),
+            make_player("g", "Good", "chef", Team.GOOD),
+            make_player("d", "Dead", "empath", Team.GOOD, is_alive=False),
+        ),
+        event_log=(
+            GameEvent(
+                event_type="execution_resolved",
+                phase=GamePhase.EXECUTION,
+                round_number=1,
+                target=None,
+                payload={"executed": None, "reason": "no_nomination"},
+                visibility=Visibility.PUBLIC
+            ),
+        )
+    )
+    
+    winner = VictoryChecker.check_victory(state)
+    assert winner == Team.GOOD
+
+
+def test_mayor_does_not_win_if_execution_happened_today() -> None:
+    from src.engine.victory_checker import VictoryChecker
+    state = GameState(
+        phase=GamePhase.NIGHT,
+        round_number=1,
+        players=(
+            make_player("i", "Imp", "imp", Team.EVIL),
+            make_player("m", "Mayor", "mayor", Team.GOOD),
+            make_player("g", "Good", "chef", Team.GOOD),
+            make_player("d", "Dead", "empath", Team.GOOD, is_alive=False),
+        ),
+        event_log=(
+            GameEvent(
+                event_type="execution_resolved",
+                phase=GamePhase.EXECUTION,
+                round_number=1,
+                target="d",
+                payload={"executed": "d", "votes": 9},
+                visibility=Visibility.PUBLIC
+            ),
+        )
+    )
+    
+    winner = VictoryChecker.check_victory(state)
+    assert winner is None
+
+
+def test_recluse_registers_as_evil_for_empath() -> None:
+    role = get_role_class("empath")()
+    state = GameState(
+        phase=GamePhase.NIGHT,
+        seat_order=("e", "r", "g"),
+        players=(
+            make_player("e", "Empath", "empath", Team.GOOD),
+            make_player("r", "Recluse", "recluse", Team.GOOD),
+            make_player("g", "Good", "chef", Team.GOOD),
+        ),
+    )
+    info = role.get_night_info(state, state.get_player("e"))
+    assert info == {"type": "empath_info", "evil_count": 1}
+
+
+def test_recluse_registers_as_evil_for_chef() -> None:
+    role = get_role_class("chef")()
+    state = GameState(
+        phase=GamePhase.FIRST_NIGHT,
+        seat_order=("r", "d", "g"),
+        players=(
+            make_player("r", "Recluse", "recluse", Team.GOOD),
+            make_player("d", "Demon", "imp", Team.EVIL),
+            make_player("g", "Good", "chef", Team.GOOD),
+        ),
+    )
+    info = role.get_night_info(state, state.get_player("g"))
+    assert info == {"type": "chef_info", "pairs": 1}
+
+def test_butler_vote_is_intercepted_if_target_does_not_vote() -> None:
+    from src.engine.nomination import NominationManager
+    from src.engine.roles.outsiders import ButlerRole
+    state = GameState(
+        phase=GamePhase.VOTING,
+        round_number=1,
+        day_number=1,
+        current_nominee="d",
+        current_nominator="g",
+        players=(
+            make_player("b", "Butler", "butler", Team.GOOD),
+            make_player("g", "Good", "chef", Team.GOOD),
+            make_player("d", "Demon", "imp", Team.EVIL),
+        ),
+        votes_today={"b": True, "g": False, "d": False},
+        payload={ButlerRole.binding_payload_key(): {"b": {"target_id": "g", "applies_on_day": 1}}}
+    )
+    
+    new_state, events = NominationManager.resolve_voting_round(state)
+    assert new_state.execution_candidates[0].votes == 0
+
+def test_slayer_kills_demon_triggers_good_victory() -> None:
+    role = get_role_class("slayer")()
+    state = GameState(
+        phase=GamePhase.DAY_DISCUSSION,
+        players=(
+            make_player("s", "Slayer", "slayer", Team.GOOD),
+            make_player("g", "Good", "chef", Team.GOOD),
+            make_player("d", "Demon", "imp", Team.EVIL),
+        ),
+    )
+
+    new_state, events = role.execute_ability(state, state.get_player("s"), "d")
+    
+    assert new_state.get_player("d").is_alive is False
+    assert "slayer_used" in new_state.get_player("s").storyteller_notes
+    
+    from src.engine.victory_checker import VictoryChecker
+    winner = VictoryChecker.check_victory(new_state)
+    assert winner == Team.GOOD
+
+def test_baron_setup_modifies_outsider_count() -> None:
+    from src.engine.scripts import TROUBLE_BREWING, distribute_roles
+    import random
+    
+    # 模拟强制选中男爵
+    random.seed(42) # Maybe deterministic?
+    # Actually just repeatedly test or monkeypatch random.sample
+    # To test logic cleanly, let's just see what distribute_roles does. 
+    # Normal 7 players: 5 Towns, 0 Out, 1 Minion, 1 Demon.
+    normal_selected, _ = distribute_roles(TROUBLE_BREWING, 7)
+    
+    # We can mock the Minion selection to always pick Baron
+    original_sample = random.sample
+    def mock_sample(population, k):
+        if "baron" in population and k == 1:
+            return ["baron"]
+        return original_sample(population, k)
+        
+    random.sample = mock_sample
+    try:
+        baron_selected, _ = distribute_roles(TROUBLE_BREWING, 7)
+        # Should be 3 Towns, 2 Out, 1 Minion(Baron), 1 Demon
+        from src.engine.roles.base_role import get_role_class
+        from src.state.game_state import RoleType
+        outsiders = [r for r in baron_selected if get_role_class(r).get_definition().role_type == RoleType.OUTSIDER]
+        townsfolks = [r for r in baron_selected if get_role_class(r).get_definition().role_type == RoleType.TOWNSFOLK]
+        
+        assert len(outsiders) == 2
+        assert len(townsfolks) == 3
+        assert "baron" in baron_selected
+    finally:
+        random.sample = original_sample

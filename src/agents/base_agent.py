@@ -26,9 +26,7 @@ class BaseAgent(ABC):
         
         # 这些属性在游戏开始时(SETUP)会通过 update_state 被注入
         self.role_id: Optional[str] = None
-        self.fake_role: Optional[str] = None
         self.team: Optional[str] = None
-        self.true_role_id: Optional[str] = None
         self.perceived_role_id: Optional[str] = None
         self.private_view: Optional[PrivatePlayerView] = None
         self.persona_signature: Optional[str] = None
@@ -83,23 +81,15 @@ class BaseAgent(ABC):
             player_state = PrivatePlayerView(
                 player_id=player_state.player_id,
                 name=player_state.name,
-                true_role_id=player_state.true_role_id or player_state.role_id,
                 perceived_role_id=player_state.perceived_role_id or player_state.fake_role or player_state.role_id,
                 public_claim_role_id=player_state.public_claim_role_id,
                 current_team=player_state.current_team or player_state.team,
-                fake_role=player_state.fake_role,
                 is_alive=player_state.is_alive,
-                is_poisoned=player_state.is_poisoned,
-                is_drunk=player_state.is_drunk,
-                storyteller_notes=player_state.storyteller_notes,
-                ongoing_effects=player_state.ongoing_effects,
             )
 
         self.private_view = player_state
-        self.true_role_id = player_state.true_role_id
         self.perceived_role_id = player_state.perceived_role_id
-        self.role_id = player_state.true_role_id
-        self.fake_role = player_state.fake_role
+        self.role_id = player_state.perceived_role_id
         self.team = player_state.current_team.value
 
     def __repr__(self) -> str:

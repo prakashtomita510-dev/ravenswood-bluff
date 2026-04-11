@@ -150,6 +150,48 @@ class ScarletWomanRole(BaseRole):
         """恶魔死亡时是否应检查绯红女郎接管。"""
         return cls.can_replace_demon(game_state)
 
+    @classmethod
+    def check_and_transfer(
+        cls,
+        pre_death_state: GameState,
+        post_death_state: GameState,
+        dead_demon_id: str,
+        trace_id: str,
+    ) -> tuple[GameState, list[GameEvent]]:
+        """检查绯红女郎接班。若符合条件，则接管为恶魔。"""
+        if pre_death_state.alive_count < 5:
+            return post_death_state, []
+            
+        for player in post_death_state.get_alive_players():
+            if (player.true_role_id or player.role_id) == "scarlet_woman":
+                demon_player = pre_death_state.get_player(dead_demon_id)
+                if not demon_player:
+                    continue
+                new_demon_role = demon_player.true_role_id or demon_player.role_id
+                
+                new_state = post_death_state.with_player_update(
+                    player.player_id,
+                    role_id=new_demon_role,
+                    team=Team.EVIL,
+                    true_role_id=new_demon_role,
+                    perceived_role_id=new_demon_role,
+                    current_team=Team.EVIL,
+                    storyteller_notes=player.storyteller_notes + (f"role_transferred_to_{new_demon_role}",)
+                )
+                transfer_event = GameEvent(
+                    event_type="role_transfer",
+                    phase=post_death_state.phase,
+                    round_number=post_death_state.round_number,
+                    trace_id=trace_id,
+                    actor=dead_demon_id,
+                    target=player.player_id,
+                    visibility=Visibility.STORYTELLER_ONLY,
+                    payload={"new_role": new_demon_role, "reason": "scarlet_woman_trigger"}
+                )
+                return new_state.with_event(transfer_event), [transfer_event]
+                
+        return post_death_state, []
+
     @staticmethod
     def get_definition() -> RoleDefinition:
         return RoleDefinition(

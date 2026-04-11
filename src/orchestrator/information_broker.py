@@ -40,16 +40,10 @@ class InformationBroker:
         return PrivatePlayerView(
             player_id=player.player_id,
             name=player.name,
-            true_role_id=player.true_role_id or player.role_id,
             perceived_role_id=player.perceived_role_id or player.fake_role or player.role_id,
             public_claim_role_id=player.public_claim_role_id,
             current_team=player.current_team or player.team,
-            fake_role=player.fake_role,
             is_alive=player.is_alive,
-            is_poisoned=player.is_poisoned,
-            is_drunk=player.is_drunk,
-            storyteller_notes=player.storyteller_notes,
-            ongoing_effects=player.ongoing_effects,
         )
 
     async def broadcast_event(self, event: GameEvent, game_state: GameState) -> None:

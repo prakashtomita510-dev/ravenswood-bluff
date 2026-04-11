@@ -41,6 +41,19 @@ class VictoryChecker:
         if alive_count <= 2 and alive_demons:
             return Team.EVIL
             
+        # 3. 市长胜利：如果只有3名玩家存活，且今天没有进行处决（白天已决算完处决环节）
+        if alive_count == 3:
+            mayors = [p for p in alive_players if (p.true_role_id or p.role_id) == "mayor"]
+            if mayors:
+                today = game_state.round_number
+                for event in reversed(game_state.event_log):
+                    if event.round_number != today:
+                        break
+                    if event.event_type == "execution_resolved":
+                        if not event.payload.get("executed"):
+                            return Team.GOOD
+                        break
+                        
         return None
 
 

@@ -178,14 +178,24 @@ class EmpathRole(BaseRole):
             right_idx = (right_idx + 1) % n
             if right_idx == my_idx: break
 
+        def _is_evil(player_state: Any) -> bool:
+            if not player_state: return False
+            if (player_state.current_team or player_state.team) == Team.EVIL:
+                return True
+            from src.engine.roles.base_role import get_role_class
+            role_cls = get_role_class(player_state.true_role_id or player_state.role_id)
+            if role_cls and getattr(role_cls, "registers_as_evil_for_detection", lambda: False)():
+                return True
+            return False
+
         evil_count = 0
         left_player = game_state.get_player(seat_order[left_idx])
-        if left_player and (left_player.current_team or left_player.team) == Team.EVIL:
+        if left_player and _is_evil(left_player):
             evil_count += 1
             
         right_player = game_state.get_player(seat_order[right_idx])
         # 如果只剩两个人（自己和另一个活人），不重复计算
-        if left_idx != right_idx and right_player and (right_player.current_team or right_player.team) == Team.EVIL:
+        if left_idx != right_idx and right_player and _is_evil(right_player):
             evil_count += 1
 
         return {
@@ -285,13 +295,23 @@ class ChefRole(BaseRole):
         if not _is_first_night(game_state):
             return None
 
+        def _is_evil(player_state: Any) -> bool:
+            if not player_state: return False
+            if (player_state.current_team or player_state.team) == Team.EVIL:
+                return True
+            from src.engine.roles.base_role import get_role_class
+            role_cls = get_role_class(player_state.true_role_id or player_state.role_id)
+            if role_cls and getattr(role_cls, "registers_as_evil_for_detection", lambda: False)():
+                return True
+            return False
+
         seat_order = game_state.seat_order
         n = len(seat_order)
         pairs = 0
         for i in range(n):
             p1 = game_state.get_player(seat_order[i])
             p2 = game_state.get_player(seat_order[(i+1)%n])
-            if p1 and p2 and (p1.current_team or p1.team) == Team.EVIL and (p2.current_team or p2.team) == Team.EVIL:
+            if p1 and p2 and _is_evil(p1) and _is_evil(p2):
                 pairs += 1
         return {"type": "chef_info", "pairs": pairs}
 
@@ -390,7 +410,12 @@ class InvestigatorRole(BaseRole):
     def _is_minion_role(self, role_id):
         from src.engine.roles.base_role import get_role_class
         cls = get_role_class(role_id)
-        return cls and cls.get_definition().role_type == RoleType.MINION
+        if not cls: return False
+        if cls.get_definition().role_type == RoleType.MINION:
+            return True
+        if getattr(cls, "registers_as_evil_for_detection", lambda: False)():
+            return "minion" in getattr(cls, "misread_as_role_types", lambda: tuple())()
+        return False
 
 
 @register_role("fortune_teller")
@@ -644,6 +669,7 @@ class SlayerRole(BaseRole):
         events.append(shot_event)
         new_state = new_state.with_event(shot_event)
         if is_demon:
+            pre_death_state = new_state
             new_state = new_state.with_player_update(target, is_alive=False)
             death_event = GameEvent(
                 event_type="player_death",
@@ -656,6 +682,12 @@ class SlayerRole(BaseRole):
             )
             events.append(death_event)
             new_state = new_state.with_event(death_event)
+            
+            from src.engine.roles.minions import ScarletWomanRole
+            new_state, sw_events = ScarletWomanRole.check_and_transfer(
+                pre_death_state, new_state, target, ""
+            )
+            events.extend(sw_events)
             
         return new_state, events
 

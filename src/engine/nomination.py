@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from src.engine.rule_engine import RuleEngine
-from src.state.game_state import ExecutionCandidate, GameEvent, GamePhase, GameState, Visibility
+from src.state.game_state import ExecutionCandidate, GameEvent, GamePhase, GameState, Visibility, RoleType
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,27 @@ class NominationManager:
     ) -> tuple[GameState, list[GameEvent]]:
         if game_state.phase != GamePhase.VOTING or not game_state.current_nominee:
             return game_state, []
+
+        valid_votes = dict(game_state.votes_today)
+        
+        # 强制校验管家规则：如果他的主人没有投票，由于规则他不能投票，此处我们强制将其弃票
+        from src.engine.roles.base_role import get_role_class
+        butler_cls = get_role_class("butler")
+        if butler_cls:
+            for voter_id in list(valid_votes.keys()):
+                if not valid_votes[voter_id]:
+                    continue
+                voter_player = game_state.get_player(voter_id)
+                if voter_player and (voter_player.true_role_id or voter_player.role_id) == "butler":
+                    binding = butler_cls.get_active_binding(game_state, voter_id)
+                    if binding and binding.get("target_id"):
+                        target_id = binding.get("target_id")
+                        if not valid_votes.get(target_id):
+                            # 主人没投票，管家被迫弃票
+                            valid_votes[voter_id] = False
+                            
+        # 更新game_state中的votes_today，这也能确保后续扣除幽灵票时，管家不被错误扣除
+        game_state = game_state.with_update(votes_today=valid_votes)
 
         yes_votes = sum(1 for v in game_state.votes_today.values() if v is True)
         votes_needed = RuleEngine.votes_required(game_state)
@@ -156,15 +177,23 @@ class NominationManager:
             votes_today={},
             execution_candidates=(),
         )
+        events: list[GameEvent] = []
         if nominee:
+            was_demon = False
+            if nominee.true_role_id or nominee.role_id:
+                from src.engine.roles.base_role import get_role_class
+                role_cls = get_role_class(nominee.true_role_id or nominee.role_id)
+                if role_cls and role_cls.get_definition().role_type == RoleType.DEMON:
+                    was_demon = True
+                    
+            pre_death_state = new_state
+            
             new_state = new_state.with_player_update(candidate.nominee_id, is_alive=False)
             if nominee.true_role_id == "saint":
                 from src.state.game_state import Team
                 new_state = new_state.with_update(winning_team=Team.EVIL)
                 payload["saint_triggered"] = True
 
-        events: list[GameEvent] = []
-        if nominee:
             death_event = GameEvent(
                 event_type="player_death",
                 phase=GamePhase.EXECUTION,
@@ -176,6 +205,13 @@ class NominationManager:
             )
             new_state = new_state.with_event(death_event)
             events.append(death_event)
+            
+            if was_demon:
+                from src.engine.roles.minions import ScarletWomanRole
+                new_state, sw_events = ScarletWomanRole.check_and_transfer(
+                    pre_death_state, new_state, candidate.nominee_id, trace_id
+                )
+                events.extend(sw_events)
 
         event = GameEvent(
             event_type="execution_resolved",

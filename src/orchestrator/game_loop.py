@@ -188,11 +188,12 @@ class GameOrchestrator:
         if not private_view:
             return
         self.broker.agents[player_id].synchronize_role(private_view)
+        p_state = self.state.get_player(player_id)
         logger.info(
             "[role_sync][%s] %s true_role=%s perceived_role=%s current_team=%s",
             trace_id,
             player_id,
-            private_view.true_role_id,
+            p_state.true_role_id if p_state else "unknown",
             private_view.perceived_role_id,
             private_view.current_team.value,
         )
@@ -690,9 +691,19 @@ class GameOrchestrator:
                 continue
             info = await self.storyteller_agent.decide_night_info(self.state, player.player_id, role_id) if self.storyteller_agent else {}
             if not info:
-                role_cls = get_role_class(role_id)
+                # 针对酒鬼，使用其以为的身份去获取信息，并强制干扰
+                active_role_id = role_id
+                if active_role_id == "drunken" and player.perceived_role_id:
+                    active_role_id = player.perceived_role_id
+
+                role_cls = get_role_class(active_role_id)
                 role = role_cls() if role_cls else None
                 info = role.build_storyteller_info(self.state, player) if role else {}
+                
+                # 如果中毒或醉酒，打乱信息
+                if info and player.ability_suppressed:
+                    info = self._scramble_info(info)
+                    
                 if info:
                     self._record_storyteller_judgement(
                         "night_info",
@@ -725,6 +736,25 @@ class GameOrchestrator:
                     role=role_id,
                     info_type=info.get("type", "unknown"),
                 )
+    def _scramble_info(self, info: dict) -> dict:
+        import random
+        from src.engine.roles.base_role import get_all_role_ids
+        scrambled = dict(info)
+        info_type = scrambled.get("type", "")
+        
+        if info_type == "empath_info":
+            options = [0, 1, 2]
+            if "evil_count" in scrambled and scrambled["evil_count"] in options:
+                options.remove(scrambled["evil_count"])
+            scrambled["evil_count"] = random.choice(options) if options else 0
+        elif info_type == "chef_info":
+            scrambled["pairs"] = (scrambled.get("pairs", 0) + random.randint(1, 2)) % 4
+        elif info_type == "fortune_teller_info":
+            scrambled["has_demon"] = not scrambled.get("has_demon", False)
+        elif info_type in ["investigator_info", "librarian_info", "washerwoman_info", "undertaker_info", "ravenkeeper_info"]:
+            scrambled["role_seen"] = random.choice(list(get_all_role_ids()))
+            
+        return scrambled
 
     def _clear_transient_statuses(self) -> None:
         players = []
