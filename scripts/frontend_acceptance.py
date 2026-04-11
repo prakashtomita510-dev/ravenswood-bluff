@@ -81,6 +81,35 @@ def assert_storyteller_contract(client: TestClient) -> None:
     assert client.get("/api/game/grimoire", params={"player_id": "h1"}).status_code == 200
 
 
+def assert_reset_clears_session_artifacts(client: TestClient) -> None:
+    response = client.post(
+        "/api/game/setup",
+        json={
+            "player_count": 5,
+            "host_id": "h1",
+            "human_mode": "player",
+            "human_client_id": "h1",
+            "discussion_rounds": 1,
+            "audit_mode": True,
+            "max_nomination_rounds": 3,
+        },
+    )
+    response.raise_for_status()
+    state_before = wait_for_state(client, "h1")
+    assert state_before["game_id"]
+
+    reset = client.post("/api/game/reset", json={"backend_mode": "mock"})
+    reset.raise_for_status()
+
+    reset_state = client.get("/api/game/state", params={"player_id": "h1"}).json()
+    assert reset_state["phase"] == "setup"
+    assert reset_state["game_id"] != state_before["game_id"]
+    assert reset_state["private_info"] == []
+    assert reset_state["nomination_state"]["stage"] == "idle"
+    assert reset_state["nomination_state"]["history"] == []
+    assert reset_state["nomination_state"]["has_current_round"] is False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run frontend acceptance checks.")
     parser.add_argument("--backend", default="mock", help="Backend mode to use (default: mock)")
@@ -90,6 +119,8 @@ def main() -> int:
         assert_player_contract(client)
     with make_client(args.backend) as client:
         assert_storyteller_contract(client)
+    with make_client(args.backend) as client:
+        assert_reset_clears_session_artifacts(client)
 
     print("frontend acceptance: ok")
     return 0

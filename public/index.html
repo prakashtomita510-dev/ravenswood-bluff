@@ -910,19 +910,31 @@
             updateStatusTabAttention();
         }
 
-        function nominationHasDisplayData(nominationState) {
+        function nominationHasCurrentData(nominationState) {
             if (!nominationState) return false;
             const voteCount = nominationState.votes ? Object.keys(nominationState.votes).length : 0;
-            const historyCount = Array.isArray(nominationState.history) ? nominationState.history.length : 0;
             return Boolean(
                 nominationState.current_nominator ||
                 nominationState.current_nominee ||
                 nominationState.defense_text ||
-                nominationState.last_result ||
                 nominationState.yes_votes ||
                 voteCount ||
-                historyCount
+                nominationState.has_current_round
             );
+        }
+
+        function nominationHasHistoryData(nominationState) {
+            if (!nominationState) return false;
+            const historyCount = Array.isArray(nominationState.history) ? nominationState.history.length : 0;
+            return Boolean(
+                nominationState.last_result ||
+                historyCount ||
+                nominationState.is_terminal
+            );
+        }
+
+        function nominationHasDisplayData(nominationState) {
+            return nominationHasCurrentData(nominationState) || nominationHasHistoryData(nominationState);
         }
 
         function getNominationDisplayState() {
@@ -931,16 +943,15 @@
                 cachedNominationState = null;
                 return current;
             }
-            if (['executed', 'no_nomination', 'invalid_nomination'].includes(current.stage)) {
+            if (['executed', 'no_nomination', 'invalid_nomination'].includes(current.stage) || current.is_terminal) {
                 cachedNominationState = null;
                 return current;
             }
-            const shouldCache = ['nomination', 'defense', 'voting', 'resolved', 'window_open'].includes(current.stage) || nominationHasDisplayData(current);
-            if (shouldCache) {
+            if (nominationHasCurrentData(current)) {
                 cachedNominationState = cloneData(current);
                 return current;
             }
-            if (cachedNominationState && lastRenderedDayNumber === gameState.day_number) {
+            if (cachedNominationState && lastRenderedDayNumber === gameState.day_number && nominationHasCurrentData(cachedNominationState)) {
                 return cachedNominationState;
             }
             return current;
@@ -1006,6 +1017,8 @@
                     title: t('nomination_result'),
                     body: gameState.phase === 'game_over' || resultPhase === 'game_over'
                         ? t('nomination_result_game_over')
+                        : resultPhase === 'no_nomination' || resultPayload.reason === 'no_nomination'
+                        ? t('nomination_stage_no_nomination')
                         : resultPayload.executed
                         ? t('execution_result', { target: playerName(resultPayload.executed) })
                         : (resultPhase === 'vote_resolved'
@@ -1075,6 +1088,16 @@
                     } else {
                         lines.push(t('nomination_history_no_execution'));
                     }
+                    if (entry.reason) {
+                        lines.push(t('nomination_history_execution_reason', { reason: entry.reason }));
+                    }
+                } else if (entry.kind === 'no_nomination') {
+                    lines.push(t('nomination_stage_no_nomination'));
+                    if (entry.reason) {
+                        lines.push(t('nomination_history_execution_reason', { reason: entry.reason }));
+                    }
+                } else if (entry.kind === 'invalid_nomination') {
+                    lines.push(t('nomination_stage_nomination'));
                     if (entry.reason) {
                         lines.push(t('nomination_history_execution_reason', { reason: entry.reason }));
                     }
@@ -1150,12 +1173,21 @@
 
         function renderNominationState() {
             const nominationState = getNominationDisplayState();
-            const shouldShow = ['nomination', 'defense', 'voting', 'resolved', 'executed', 'window_open'].includes(nominationState.stage) || nominationHasDisplayData(nominationState);
+            const hasCurrentRound = nominationHasCurrentData(nominationState);
+            const hasHistory = nominationHasHistoryData(nominationState);
+            const shouldShow = hasCurrentRound || hasHistory;
+            const isTerminal = Boolean(nominationState.is_terminal || ['executed', 'no_nomination', 'invalid_nomination'].includes(nominationState.stage));
+            const resultReason = nominationState.last_result?.reason || nominationState.result_reason || '';
+            const isNoNomination = resultReason === 'no_nomination' || nominationState.stage === 'no_nomination';
             statusAttention = shouldShow;
             updateStatusTabAttention();
             document.getElementById('nominationStateText').textContent = gameState.phase === 'game_over'
                 ? t('nomination_result_game_over')
-                : shouldShow
+                : hasCurrentRound
+                ? nominationStageText(nominationState.stage)
+                : isNoNomination
+                ? t('nomination_stage_no_nomination')
+                : isTerminal
                 ? nominationStageText(nominationState.stage)
                 : t('nomination_none');
             renderNominationAlivePlayers(nominationState);
@@ -1164,10 +1196,10 @@
             const meta = document.getElementById('nominationMeta');
             meta.innerHTML = '';
             const values = [];
-            if (nominationState.current_nominator) values.push([t('current_nominator'), playerName(nominationState.current_nominator)]);
-            if (nominationState.current_nominee) values.push([t('current_nominee'), playerName(nominationState.current_nominee)]);
+            if (hasCurrentRound && nominationState.current_nominator) values.push([t('current_nominator'), playerName(nominationState.current_nominator)]);
+            if (hasCurrentRound && nominationState.current_nominee) values.push([t('current_nominee'), playerName(nominationState.current_nominee)]);
             if (typeof nominationState.round === 'number') values.push([t('nomination_round'), `${nominationState.round}`]);
-            if (shouldShow && typeof nominationState.threshold === 'number') values.push([t('current_votes'), `${nominationState.yes_votes || 0} / ${nominationState.threshold}`]);
+            if (hasCurrentRound && typeof nominationState.threshold === 'number') values.push([t('current_votes'), `${nominationState.yes_votes || 0} / ${nominationState.threshold}`]);
             values.forEach(([label, value]) => {
                 const pill = document.createElement('span');
                 pill.className = 'status-pill';
@@ -1238,7 +1270,12 @@
                 div.innerHTML = `<div><span>${p.name}</span><br><small class="player-role-tag">${roleDisplayName}</small></div> <small>${statusText}</small>`;
                 container.appendChild(div);
 
-                if (p.is_alive && p.player_id !== currentUserId) {
+                const canTarget =
+                    pendingActionType === 'death_trigger'
+                        ? p.player_id !== currentUserId
+                        : p.is_alive && p.player_id !== currentUserId;
+
+                if (canTarget) {
                     const opt = document.createElement('option');
                     opt.value = p.player_id;
                     opt.textContent = p.name;
@@ -1461,6 +1498,7 @@
             }
 
             pendingActionType = type;
+            updatePlayerList(players);
             let promptType = type === 'defense_speech' ? t('nomination_stage_defense') : type;
             if (type === 'vote') {
                 promptType = `${t('nomination_stage_voting')} - ${playerName(gameState.nomination_state?.current_nominee)}`;

@@ -1,23 +1,20 @@
 # 鸦木布拉夫小镇 (Ravenswood Bluff) AI 引擎
 
-![Version](https://img.shields.io/badge/version-alpha--0.1-orange)
+![Version](https://img.shields.io/badge/version-alpha--0.2_dev-orange)
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**鸦木布拉夫小镇** 是一个基于多智能体（Multi-Agent）与状态机驱动的《血染钟楼》（Blood on the Clocktower）社交推演引擎。它深度还原了官方剧本《暗流涌动》（Trouble Brewing），并利用大语言模型（LLM）赋予 AI 玩家独特的个性、逻辑推理与伪装能力。
+**鸦木布拉夫小镇** 是一个基于多智能体（Multi-Agent）与状态机驱动的《血染钟楼》（Blood on the Clocktower）社交推演引擎。它深度还原了官方剧本《暗流涌动》（Trouble Brewing），并利用大语言模型（LLM）赋予 AI 玩家独特的个性、逻辑推理与伪装能力。当前处于 **Alpha 0.2** 研发阶段，聚焦于 AI 智能提升与说书人裁断系统的强化。
 
 ---
 
 ## 🌟 核心特性
 
-- **🧠 认知一致性 (Identity Alignment)**：AI 代理拥有真实的“认知层”。即使是**酒鬼**或**中毒**状态，代理也会基于其感知的虚假身份进行推演，确保社交博弈的真实性。
-- **📖 全功能魔典 (Grimoire)**：集成式的说书人控制台。人类说书人可以实时查看全局真实状态（包括所有私密事件、中毒记录、恶魔传位等），掌控全局。
-- **⚖️ 严谨的规则引擎**：
-    - 完整实现 22 个角色逻辑。
-    - 严格遵循官方 **Night Sheet** 的行动顺序（Night Order）。
-    - 自动处理复杂的角色互动（如：小恶魔自杀传位、绯红女郎接班、预言家红鲱鱼等）。
-- **🗳️ 交互式提名系统**：支持“提名阶段 -> 辩解发言 -> 实时投票”的完整昼间互动流程。
-- **🛠️ 开发者审计工具**：提供 `MockBackend` 与全自动模拟脚本 `simulate_game.py`，支持在无需 API Key 的情况下进行规则合法性的大规模回归测试。
+- **🧠 认知一致性 (Identity Alignment)与智能增强**：AI 代理拥有真实的“认知层”。即使是**酒鬼**或**中毒**状态，代理也会基于其感知的虚假身份进行推演。Alpha 0.2 的重点在于推进更完善的社交图谱与长期记忆（Episodic Memory）。
+- **📖 说书人智能决策框架**：具备平衡裁断判定体系（Balance Judgement），能自主评估当前的局势动态并控制红鲱鱼、酒鬼信息、解药机制，引导局势走向精彩。
+- **⚖️ 严谨的规则引擎**：完整实现 Trouble Brewing 剧本 22 个角色逻辑。严格遵循官方 **Night Sheet** 行动顺序（Night Order），完美处理小恶魔传位、守鸦人死亡触发等复杂互动。
+- **🗳️ 交互式提名网络**：支持高并发的昼间互动、多轮动态提名、以及幽灵票流转判定，自动清理残存记录消除状态污染。
+- **🛠️ 开发者审计与自动化验收生态**：提供 `MockBackend`、验收脚本集群（Wave 1/2 Acceptance）和 `simulate_game.py`，支持在不调用真实大模型的前提下进行断言规模测试，甚至解析对局重播日志（Replay Parser）。
 
 ---
 
@@ -38,7 +35,7 @@ pip install -e "."
 ```
 
 ### 2. 配置 API Key（可选）
-如果您希望使用真实的大模型（如 GPT-4o），请配置环境变量：
+如果希望以最高智力水平驱动 AI 角色运行，请配置相应的环境变量（支持主流兼容 OpenAI 格式的模型）：
 
 ```powershell
 $env:OPENAI_API_KEY="your_api_key"
@@ -49,40 +46,45 @@ $env:OPENAI_BASE_URL="https://api.openai.com/v1"
 ```bash
 python -m src.api.server
 ```
-服务器默认运行在 `http://127.0.0.1:8000`。
+服务器默认持续运行在 `http://127.0.0.1:8000`。
 
-### 4. 游玩与观测
+### 4. 游玩与全局观测
 - **玩家/说书人界面**: 访问 [http://127.0.0.1:8000](http://127.0.0.1:8000)
-- **人类玩家 ID**: 使用 `h1` 加入游戏。
-- **说书人模式**: 在 UI 侧边栏开启“魔典”即可进入上帝视角。
+- **人类身份进入**: 输入 `h1` 作为主机 ID 加入游戏。
+- **说书人魔典**: 随时可在 UI 中呼出“魔典(Grimoire)”，实时追踪系统真相与底层伪装分配状态。
 
 ---
 
-## 🧪 自动化审计与测试
+## 🧪 自动化审计与测试体系
 
-本项目内置了强大的自动化审计系统，用于验证规则执行的准确性。
+项目具备完备的测试生态支持，全面覆盖了从底层机制到前端契约的所有角落：
 
 ```bash
-# 使用 Mock 后端运行 8 人局全流程模拟
-.venv\Scripts\python.exe simulate_game.py
-```
+# 运行 pytest 核心基础单元/集成测试池
+pytest tests/ -q
 
-该脚本会生成详细的阶段日志，验证身份同步、技能发动顺序以及胜利条件判定。
+# 执行独立的自动化验收测试以验证业务场景断言，如：
+python scripts/wave1_acceptance.py
+python scripts/nomination_acceptance.py
+python scripts/storyteller_balance_acceptance.py
+```
+这能有效排查身份发放、投票链条以及阶段转换的稳定性问题。
 
 ---
 
-## 📂 项目结构
+## 📂 项目架构
 
-- `src/agents/`: AI 代理逻辑、认知同步、社交推演 Prompt 设计。
-- `src/engine/`: 核心规则实现、角色技能定义、行动顺序管理。
-- `src/orchestrator/`: 游戏主循环、信息分发器（Broker）、事件总线。
-- `src/state/`: 基于 Pydantic 的不可变游戏快照模型。
-- `public/`: 基于 HTML/JS 的前端交互界面。
+- `docs/alpha-0.2-plan/`: 最新版本的研发进展看板与专项提升计划（AI/前端/裁定等方案图）。
+- `src/agents/`: AI 行动内核、认知层同步模块、记忆组件（工作记忆/情景记忆）。
+- `src/engine/`: 剧本内核引擎、夜晚时间轴控制器。
+- `src/orchestrator/`: 顶层通信控制、信息分发（Information Broker）及智能说书人逻辑（Storyteller Balance）。
+- `src/state/`: 基于不可变状态机（Pydantic Snapshot）的数据链路结构。
+- `public/`: 浏览器 UI，游戏控制台与魔典渲染前台。
 
 ---
 
 ## 📝 版本记录
-详见 [VERSION_NOTES.md](./VERSION_NOTES.md)。
+此分支所有变动追踪至 [CHANGELOG.md](./CHANGELOG.md)。更多早期构架草图可看 `architecture.md`。
 
 ## 🛡️ 开源协议
-本项目基于 MIT 协议开源。
+本引擎及实现基于 MIT 协议，完全开源。

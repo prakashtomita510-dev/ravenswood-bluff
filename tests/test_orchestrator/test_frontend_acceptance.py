@@ -96,6 +96,38 @@ def test_storyteller_frontend_contract_exposes_grimoire_and_full_state(monkeypat
         assert payload["players"]
 
 
+def test_frontend_contract_reset_clears_session_artifacts(monkeypatch):
+    with make_client(monkeypatch) as client:
+        setup = client.post(
+            "/api/game/setup",
+            json={
+                "player_count": 5,
+                "host_id": "h1",
+                "human_mode": "player",
+                "human_client_id": "h1",
+                "discussion_rounds": 1,
+                "audit_mode": True,
+                "max_nomination_rounds": 3,
+            },
+        )
+        assert setup.status_code == 200
+        assert setup.json()["status"] == "ok"
+
+        state_before = wait_for_nomination_prompt(client)
+        assert state_before["game_id"]
+
+        reset = client.post("/api/game/reset", json={"backend_mode": "mock"})
+        assert reset.status_code == 200
+
+        state_after = client.get("/api/game/state", params={"player_id": "h1"}).json()
+        assert state_after["phase"] == "setup"
+        assert state_after["game_id"] != state_before["game_id"]
+        assert state_after["private_info"] == []
+        assert state_after["nomination_state"]["stage"] == "idle"
+        assert state_after["nomination_state"]["history"] == []
+        assert state_after["nomination_state"]["has_current_round"] is False
+
+
 def test_nomination_state_contract_keeps_pending_resolution_details():
     state = GameState(
         players=(

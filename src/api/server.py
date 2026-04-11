@@ -329,6 +329,19 @@ def build_nomination_state(orchestrator: GameOrchestrator) -> dict[str, Any]:
                 )
         history = inferred_history[-12:]
     nomination_state["history"] = history
+    nomination_state["has_history"] = bool(history)
+    is_terminal = terminal_stage or terminal_result
+    nomination_state["has_current_round"] = bool(
+        not is_terminal
+        and (
+            nomination_state.get("stage") in {"window_open", "nomination", "defense", "voting", "resolved"}
+            or nomination_state.get("current_nominator")
+            or nomination_state.get("current_nominee")
+            or nomination_state.get("defense_text")
+            or nomination_state.get("votes")
+        )
+    )
+    nomination_state["is_terminal"] = is_terminal
     nomination_state["threshold"] = (state.alive_count // 2) + 1 if state.alive_count else 0
     return nomination_state
 
@@ -393,12 +406,16 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
     await manager.connect(websocket, player_id)
     async def send_message_with_session(message: str) -> None:
         await manager.send_personal_message(decorate_ws_message_with_game_id(message, global_orchestrator), player_id)
+    async def chat_callback(sender_id: str, content: str, is_private: bool) -> None:
+        orchestrator = global_orchestrator
+        if orchestrator:
+            await orchestrator.handle_chat(sender_id, content, is_private)
     if player_id not in human_agents:
         agent = HumanAgent(
             player_id=player_id, 
             name=f"Human_{player_id}", 
             send_message_callback=send_message_with_session,
-            chat_callback=global_orchestrator.handle_chat if global_orchestrator else None
+            chat_callback=chat_callback
         )
         human_agents[player_id] = agent
         if global_orchestrator:

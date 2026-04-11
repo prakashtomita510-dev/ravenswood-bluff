@@ -48,6 +48,26 @@ class DummyStoryteller:
         return ""
 
 
+class TrackingAgent(BaseAgent):
+    def __init__(self, pid, name, actions=None):
+        super().__init__(pid, name)
+        self.actions = actions or {}
+        self.calls: list[str] = []
+
+    async def act(self, game_state, action_type, **kwargs):
+        self.calls.append(action_type)
+        queue = self.actions.get(action_type, [])
+        if queue:
+            return queue.pop(0)
+        return {"action": "none"}
+
+    async def observe_event(self, event, game_state):
+        pass
+
+    async def think(self, prompt, game_state):
+        return ""
+
+
 @pytest.mark.asyncio
 async def test_game_orchestrator_initialization():
     initial_state = GameState(
@@ -129,6 +149,13 @@ async def test_first_night_evil_private_info_contains_team_and_bluffs():
     assert payload["title"] == "邪恶阵营互认"
     assert payload["teammates"] == ["Spy"]
     assert payload["bluffs"] == ["chef", "empath", "monk"]
+
+    spy_events = [
+        event for event in orch.event_log.events
+        if event.event_type == "private_info_delivered" and event.target == "a2"
+    ]
+    assert spy_events, "expected spy to receive evil first-night reveal"
+    assert spy_events[0].payload["bluffs"] == ["chef", "empath", "monk"]
 
 
 @pytest.mark.asyncio
@@ -517,3 +544,128 @@ async def test_nomination_phase_supports_multiple_rounds_before_night():
     assert orch.state.payload["nomination_state"]["current_nominee"] is None
     assert orch.state.payload["nomination_state"]["votes"] == {}
     assert len(orch.state.payload["nomination_history"]) >= 4
+
+
+@pytest.mark.asyncio
+async def test_nomination_phase_records_no_nomination_and_clears_current_state():
+    initial_state = GameState(
+        phase=GamePhase.NOMINATION,
+        round_number=1,
+        day_number=1,
+        players=(
+            PlayerState(player_id="p1", name="One", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Two", role_id="empath", team=Team.GOOD),
+            PlayerState(player_id="p3", name="Three", role_id="imp", team=Team.EVIL),
+        ),
+        seat_order=("p1", "p2", "p3"),
+        config=GameConfig(
+            player_count=3,
+            human_mode="none",
+            human_player_ids=[],
+            is_human_participant=False,
+            discussion_rounds=1,
+            max_nomination_rounds=1,
+        ),
+    )
+    orch = GameOrchestrator(initial_state)
+    orch.storyteller_agent = DummyStoryteller()
+    orch.register_agent(TrackingAgent("p1", "One", {"nomination_intent": [{"action": "none"}]}))
+    orch.register_agent(TrackingAgent("p2", "Two", {"nomination_intent": [{"action": "none"}]}))
+    orch.register_agent(TrackingAgent("p3", "Three", {"nomination_intent": [{"action": "none"}]}))
+
+    await orch._run_nomination_phase()
+
+    history = orch.state.payload["nomination_history"]
+    assert any(entry["kind"] == "no_nomination" for entry in history)
+    assert orch.state.current_nominator is None
+    assert orch.state.current_nominee is None
+    assert orch.state.payload["nomination_state"]["current_nominator"] is None
+    assert orch.state.payload["nomination_state"]["current_nominee"] is None
+    assert orch.state.payload["nomination_state"]["last_result"]["reason"] == "no_nomination"
+
+
+@pytest.mark.asyncio
+async def test_nomination_phase_records_no_execution_when_votes_do_not_pass():
+    initial_state = GameState(
+        phase=GamePhase.NOMINATION,
+        round_number=1,
+        day_number=1,
+        players=(
+            PlayerState(player_id="p1", name="One", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Two", role_id="empath", team=Team.GOOD),
+            PlayerState(player_id="p3", name="Three", role_id="imp", team=Team.EVIL),
+            PlayerState(player_id="p4", name="Four", role_id="chef", team=Team.GOOD),
+        ),
+        seat_order=("p1", "p2", "p3", "p4"),
+        config=GameConfig(
+            player_count=4,
+            human_mode="none",
+            human_player_ids=[],
+            is_human_participant=False,
+            discussion_rounds=1,
+            max_nomination_rounds=1,
+        ),
+    )
+    orch = GameOrchestrator(initial_state)
+    orch.storyteller_agent = DummyStoryteller()
+    orch.register_agent(TrackingAgent("p1", "One", {
+        "nomination_intent": [{"action": "nominate", "target": "p3"}],
+        "vote": [{"action": "vote", "decision": True}],
+        "defense_speech": [{"action": "defense_speech", "content": "No comment."}],
+    }))
+    orch.register_agent(TrackingAgent("p2", "Two", {
+        "nomination_intent": [{"action": "none"}],
+        "vote": [{"action": "vote", "decision": True}],
+        "defense_speech": [{"action": "defense_speech", "content": "I disagree."}],
+    }))
+    orch.register_agent(TrackingAgent("p3", "Three", {
+        "nomination_intent": [{"action": "none"}],
+        "vote": [{"action": "vote", "decision": False}],
+        "defense_speech": [{"action": "defense_speech", "content": "I am innocent."}],
+    }))
+    orch.register_agent(TrackingAgent("p4", "Four", {
+        "nomination_intent": [{"action": "none"}],
+        "vote": [{"action": "vote", "decision": False}],
+        "defense_speech": [{"action": "defense_speech", "content": "Please spare me."}],
+    }))
+
+    await orch._run_nomination_phase()
+
+    history = orch.state.payload["nomination_history"]
+    assert any(entry["kind"] == "voting_resolved" for entry in history)
+    assert orch.state.payload["nomination_state"]["current_nominator"] is None
+    assert orch.state.payload["nomination_state"]["current_nominee"] is None
+    assert orch.state.payload["nomination_state"]["last_result"]["executed"] is None
+    assert orch.state.payload["nomination_state"]["last_result"]["reason"] == "no_execution"
+
+
+@pytest.mark.asyncio
+async def test_collect_nomination_intents_uses_human_and_ai_windows_consistently():
+    initial_state = GameState(
+        phase=GamePhase.NOMINATION,
+        players=(
+            PlayerState(player_id="p1", name="Human", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p2", name="AI", role_id="imp", team=Team.EVIL),
+        ),
+        seat_order=("p1", "p2"),
+        config=GameConfig(
+            player_count=2,
+            human_mode="player",
+            human_player_ids=("p1",),
+            is_human_participant=True,
+            discussion_rounds=1,
+            max_nomination_rounds=1,
+        ),
+    )
+    orch = GameOrchestrator(initial_state)
+    orch.storyteller_agent = DummyStoryteller()
+    human_agent = TrackingAgent("p1", "Human", {"nominate": [{"action": "none"}]})
+    ai_agent = TrackingAgent("p2", "AI", {"nomination_intent": [{"action": "none"}]})
+    orch.register_agent(human_agent)
+    orch.register_agent(ai_agent)
+
+    intents = await orch._collect_nomination_intents(1)
+
+    assert human_agent.calls == ["nominate"]
+    assert ai_agent.calls == ["nomination_intent"]
+    assert "p1" in intents and "p2" in intents

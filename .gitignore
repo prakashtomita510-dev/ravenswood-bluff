@@ -30,6 +30,8 @@ Thumbs.db
 
 # Logs
 *.log
+*.err
+*.out
 logs/
 
 # Test
@@ -37,6 +39,12 @@ logs/
 htmlcov/
 .coverage
 coverage.xml
+test_results.txt
+tests/test_runs/
 
 # Game data
 game_records/
+
+# Evaluation
+storyteller_eval_samples/
+storyteller_eval_samples_debug/

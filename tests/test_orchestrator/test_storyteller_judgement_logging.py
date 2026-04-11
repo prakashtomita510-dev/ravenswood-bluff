@@ -11,17 +11,19 @@ import pytest
 from src.agents.base_agent import BaseAgent
 from src.agents import storyteller_agent as storyteller_module
 from src.llm.mock_backend import MockBackend
+from src.engine.roles.base_role import get_role_class
 from src.engine.roles.minions import SpyRole
 from src.engine.roles.townsfolk import (
     ChefRole,
     EmpathRole,
+    FortuneTellerRole,
     InvestigatorRole,
     LibrarianRole,
     UndertakerRole,
     WasherwomanRole,
 )
 from src.orchestrator.game_loop import GameOrchestrator
-from src.state.game_state import GameConfig, GameEvent, GamePhase, GameState, PlayerState, PlayerStatus, Team, Visibility
+from src.state.game_state import GameConfig, GameEvent, GamePhase, GameState, PlayerState, PlayerStatus, RoleType, Team, Visibility
 
 
 class ScriptedAgent(BaseAgent):
@@ -150,6 +152,32 @@ def _state_for_spy() -> GameState:
     )
 
 
+def _state_for_fortune_teller(*, suppressed: bool = False) -> GameState:
+    statuses = (PlayerStatus.ALIVE, PlayerStatus.DRUNK) if suppressed else (PlayerStatus.ALIVE,)
+    return GameState(
+        phase=GamePhase.NIGHT,
+        round_number=2,
+        seat_order=("p1", "p2", "p3", "p4"),
+        players=(
+            PlayerState(player_id="p1", name="FT", role_id="fortune_teller", team=Team.GOOD, statuses=statuses),
+            PlayerState(player_id="p2", name="Imp", role_id="imp", team=Team.EVIL),
+            PlayerState(player_id="p3", name="Town", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p4", name="Chef", role_id="chef", team=Team.GOOD),
+        ),
+        event_log=(
+            GameEvent(
+                event_type="night_action_resolved",
+                phase=GamePhase.NIGHT,
+                round_number=2,
+                actor="p1",
+                payload={"targets": ["p2", "p3"]},
+                visibility=Visibility.STORYTELLER_ONLY,
+            ),
+        ),
+        payload={"fortune_teller_red_herring": "p4"},
+    )
+
+
 def _state_for_undertaker() -> GameState:
     return GameState(
         phase=GamePhase.NIGHT,
@@ -176,7 +204,7 @@ def _state_for_undertaker() -> GameState:
 
 @pytest.mark.asyncio
 async def test_storyteller_agent_records_judgement_summary_and_log(monkeypatch):
-    workspace = Path.cwd() / "_storyteller_judgement_workspace"
+    workspace = Path(__file__).parent.parent / "test_runs" / "_storyteller_judgement_workspace"
     workspace.mkdir(exist_ok=True)
     monkeypatch.chdir(workspace)
     module = importlib.reload(storyteller_module)
@@ -362,6 +390,9 @@ async def test_fixed_info_roles_flow_through_storyteller_build_contract(
     assert recent[-1]["decision"] == "deliver"
     assert recent[-1]["source"] == "build_storyteller_info"
     assert recent[-1]["bucket"] == "night_info.fixed_info"
+    assert recent[-1]["contract_mode"] == "fixed_info"
+    assert recent[-1]["adjudication_path"] == "fixed_info.adjudicated"
+    assert recent[-1]["distortion_strategy"] == "none"
     content = Path("storyteller_run.log").read_text(encoding="utf-8")
     assert "[judgement][night_info]" in content
     _close_workspace_handlers(workspace)
@@ -400,6 +431,9 @@ async def test_storyteller_marks_suppressed_fixed_info_as_distorted_bucket(monke
     assert recent[-1]["decision"] == "suppressed"
     assert recent[-1]["bucket"] == "night_info.fixed_info.suppressed"
     assert recent[-1]["scope"] == "fixed_info.suppressed"
+    assert recent[-1]["contract_mode"] == "fixed_info"
+    assert recent[-1]["adjudication_path"] == "fixed_info.adjudicated"
+    assert recent[-1]["distortion_strategy"] == "empath_binary_flip"
     _close_workspace_handlers(workspace)
 
 
@@ -436,12 +470,19 @@ async def test_storyteller_marks_suppressed_investigator_as_consistent_false_inf
     assert recent[-1]["category"] == "night_info"
     assert recent[-1]["decision"] == "suppressed"
     assert recent[-1]["bucket"] == "night_info.fixed_info.suppressed"
+    assert recent[-1]["adjudication_path"] == "fixed_info.adjudicated"
+    assert recent[-1]["distortion_strategy"] == "investigator_pair_role_seen_distortion"
     asserted_roles = {
         (state.get_player(pid).true_role_id or state.get_player(pid).role_id)
         for pid in info["players"]
         if state.get_player(pid)
     }
-    assert info["role_seen"] not in asserted_roles
+    assert len(info["players"]) == 2
+    assert "p1" not in info["players"]
+    assert info["role_seen"] in asserted_roles
+    seen_role_cls = get_role_class(info["role_seen"])
+    assert seen_role_cls is not None
+    assert seen_role_cls.get_definition().role_type == RoleType.MINION
     _close_workspace_handlers(workspace)
 
 
@@ -473,11 +514,20 @@ async def test_storyteller_distorts_investigator_role_seen_when_suppressed(monke
     info = await agent.decide_night_info(state, "p1", "investigator")
 
     assert info["type"] == "investigator_info"
-    assert info["role_seen"] != "spy"
     assert len(info["players"]) == 2
     assert "p1" not in info["players"]
+    role_map = {
+        pid: (state.get_player(pid).true_role_id or state.get_player(pid).role_id)
+        for pid in info["players"]
+        if state.get_player(pid)
+    }
+    assert info["role_seen"] in role_map.values()
+    seen_role_cls = get_role_class(info["role_seen"])
+    assert seen_role_cls is not None
+    assert seen_role_cls.get_definition().role_type == RoleType.MINION
     recent = agent.get_recent_judgements(5)
     assert recent[-1]["bucket"] == "night_info.fixed_info.suppressed"
+    assert recent[-1]["distortion_strategy"] == "investigator_pair_role_seen_distortion"
     _close_workspace_handlers(workspace)
 
 
@@ -518,4 +568,79 @@ async def test_storyteller_distorts_spy_book_when_suppressed(monkeypatch):
     )
     recent = agent.get_recent_judgements(5)
     assert recent[-1]["bucket"] == "night_info.fixed_info.suppressed"
+    assert recent[-1]["distortion_strategy"] == "spy_book_single_entry_distortion"
+    _close_workspace_handlers(workspace)
+
+
+@pytest.mark.asyncio
+async def test_storyteller_marks_fortune_teller_as_storyteller_info_contract(monkeypatch):
+    workspace = Path.cwd() / "_storyteller_judgement_workspace"
+    workspace.mkdir(exist_ok=True)
+    monkeypatch.chdir(workspace)
+    module = importlib.reload(storyteller_module)
+    agent = module.StorytellerAgent(MockBackend())
+
+    state = _state_for_fortune_teller(suppressed=False)
+
+    info = await agent.decide_night_info(state, "p1", "fortune_teller")
+
+    assert info["type"] == "fortune_teller_info"
+    assert info["has_demon"] is True
+    recent = agent.get_recent_judgements(5)
+    assert recent[-1]["bucket"] == "night_info.storyteller_info"
+    assert recent[-1]["contract_mode"] == "storyteller_info"
+    assert recent[-1]["adjudication_path"] == "storyteller_info.adjudicated"
+    assert recent[-1]["distortion_strategy"] == "none"
+    _close_workspace_handlers(workspace)
+
+
+@pytest.mark.asyncio
+async def test_storyteller_distorts_fortune_teller_when_suppressed(monkeypatch):
+    workspace = Path.cwd() / "_storyteller_judgement_workspace"
+    workspace.mkdir(exist_ok=True)
+    monkeypatch.chdir(workspace)
+    module = importlib.reload(storyteller_module)
+    agent = module.StorytellerAgent(MockBackend())
+
+    state = _state_for_fortune_teller(suppressed=True)
+
+    info = await agent.decide_night_info(state, "p1", "fortune_teller")
+
+    assert info["type"] == "fortune_teller_info"
+    assert info["has_demon"] is False
+    recent = agent.get_recent_judgements(5)
+    assert recent[-1]["decision"] == "suppressed"
+    assert recent[-1]["bucket"] == "night_info.storyteller_info.suppressed"
+    assert recent[-1]["contract_mode"] == "storyteller_info"
+    assert recent[-1]["adjudication_path"] == "storyteller_info.adjudicated"
+    assert recent[-1]["distortion_strategy"] == "fortune_teller_boolean_flip"
+    _close_workspace_handlers(workspace)
+
+
+@pytest.mark.asyncio
+async def test_storyteller_records_legacy_fallback_path_when_storyteller_info_uses_old_contract(monkeypatch):
+    workspace = Path.cwd() / "_storyteller_judgement_workspace"
+    workspace.mkdir(exist_ok=True)
+    monkeypatch.chdir(workspace)
+    module = importlib.reload(storyteller_module)
+    agent = module.StorytellerAgent(MockBackend())
+
+    state = _state_for_fortune_teller(suppressed=False)
+
+    monkeypatch.setattr(FortuneTellerRole, "build_storyteller_info", lambda self, *_args, **_kwargs: None, raising=False)
+    monkeypatch.setattr(
+        FortuneTellerRole,
+        "get_night_info",
+        lambda self, *_args, **_kwargs: {"type": "fortune_teller_info", "has_demon": True},
+        raising=False,
+    )
+
+    info = await agent.decide_night_info(state, "p1", "fortune_teller")
+
+    assert info["type"] == "fortune_teller_info"
+    recent = agent.get_recent_judgements(5)
+    assert recent[-1]["source"] == "legacy_get_night_info"
+    assert recent[-1]["contract_mode"] == "storyteller_info.legacy_fallback"
+    assert recent[-1]["adjudication_path"] == "storyteller_info.legacy_fallback"
+    assert recent[-1]["bucket"] == "night_info.storyteller_info"
     _close_workspace_handlers(workspace)

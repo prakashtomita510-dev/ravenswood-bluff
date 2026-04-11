@@ -9,7 +9,7 @@ import random
 from typing import Any
 
 from src.llm.openai_backend import OpenAIBackend
-from src.state.game_state import GamePhase, GameState, RoleType, Team
+from src.state.game_state import GamePhase, GameState, RoleType, Team, Visibility
 
 logger = logging.getLogger(__name__)
 storyteller_logger = logging.getLogger("storyteller")
@@ -42,6 +42,22 @@ class StorytellerAgent:
         if isinstance(value, (str, int, float, bool)) or value is None:
             return str(value)
         return json.dumps(value, ensure_ascii=False, default=str)
+
+    def _jsonable(self, value: Any) -> Any:
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        if isinstance(value, dict):
+            return {str(key): self._jsonable(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [self._jsonable(item) for item in value]
+        if hasattr(value, "value"):
+            return getattr(value, "value")
+        if hasattr(value, "isoformat"):
+            try:
+                return value.isoformat()
+            except Exception:
+                pass
+        return str(value)
 
     def _classify_judgement_bucket(self, category: str, decision: str, fields: dict[str, Any]) -> str:
         if category in {"drunk_role"}:
@@ -95,6 +111,165 @@ class StorytellerAgent:
                 }
             )
         return summaries
+
+    def _build_truth_view(self, game_state: GameState) -> dict[str, Any]:
+        return {
+            "seat_order": list(game_state.seat_order),
+            "players": [
+                {
+                    "player_id": player.player_id,
+                    "name": player.name,
+                    "true_role_id": player.true_role_id or player.role_id,
+                    "perceived_role_id": player.perceived_role_id,
+                    "current_team": (player.current_team or player.team).value,
+                    "is_alive": player.is_alive,
+                    "statuses": [status.value for status in player.statuses],
+                    "storyteller_notes": list(player.storyteller_notes),
+                    "ongoing_effects": list(player.ongoing_effects),
+                }
+                for player in game_state.players
+            ],
+            "bluffs": list(game_state.bluffs),
+            "payload": self._jsonable(game_state.payload),
+        }
+
+    def _build_public_state_view(self, game_state: GameState) -> dict[str, Any]:
+        public_events = [
+            {
+                "event_type": event.event_type,
+                "phase": event.phase.value,
+                "round_number": event.round_number,
+                "trace_id": event.trace_id,
+                "actor": event.actor,
+                "target": event.target,
+                "payload": self._jsonable(event.payload),
+            }
+            for event in game_state.event_log
+            if event.visibility == Visibility.PUBLIC
+        ]
+        return {
+            "phase": game_state.phase.value,
+            "round_number": game_state.round_number,
+            "day_number": game_state.day_number,
+            "alive_count": game_state.alive_count,
+            "players": [
+                {
+                    "player_id": player.player_id,
+                    "name": player.name,
+                    "is_alive": player.is_alive,
+                    "public_claim_role_id": player.public_claim_role_id,
+                }
+                for player in game_state.players
+            ],
+            "public_events": public_events[-40:],
+            "nomination_history": self._jsonable(game_state.payload.get("nomination_history", [])),
+        }
+
+    def _build_private_delivery_history(self, game_state: GameState) -> list[dict[str, Any]]:
+        deliveries = []
+        for event in game_state.event_log:
+            if event.event_type != "private_info_delivered":
+                continue
+            deliveries.append(
+                {
+                    "target": event.target,
+                    "phase": event.phase.value,
+                    "round_number": event.round_number,
+                    "trace_id": event.trace_id,
+                    "payload": self._jsonable(event.payload),
+                }
+            )
+        return deliveries[-40:]
+
+    def _build_event_log_so_far(self, game_state: GameState) -> list[dict[str, Any]]:
+        return [
+            {
+                "event_type": event.event_type,
+                "phase": event.phase.value,
+                "round_number": event.round_number,
+                "trace_id": event.trace_id,
+                "actor": event.actor,
+                "target": event.target,
+                "visibility": event.visibility.value,
+                "payload": self._jsonable(event.payload),
+            }
+            for event in game_state.event_log[-80:]
+        ]
+
+    def _build_storyteller_context(self, game_state: GameState) -> dict[str, Any]:
+        alive_good = sum(1 for player in game_state.players if player.is_alive and (player.current_team or player.team) == Team.GOOD)
+        alive_evil = sum(1 for player in game_state.players if player.is_alive and (player.current_team or player.team) == Team.EVIL)
+        hard_lock_risk = alive_evil == 0 or alive_good <= 1
+        early_end_risk = game_state.day_number <= 2 and (alive_good <= 2 or alive_evil == 1)
+        return {
+            "alive_good": alive_good,
+            "alive_evil": alive_evil,
+            "alive_total": game_state.alive_count,
+            "phase": game_state.phase.value,
+            "day_number": game_state.day_number,
+            "round_number": game_state.round_number,
+            "hard_lock_risk": hard_lock_risk,
+            "early_end_risk": early_end_risk,
+            "recent_judgements": self.summarize_recent_judgements(8),
+        }
+
+    def build_balance_sample(self, game_state: GameState, player_id: str, role_id: str) -> dict[str, Any]:
+        player = game_state.get_player(player_id)
+        info, info_source, contract_mode = self._adjudicate_raw_info(game_state, player_id, role_id)
+        adjudication_path = self._resolve_adjudication_path(role_id, info_source)
+        chosen_info = info
+        distortion_strategy = "none"
+        suppressed = bool(player and player.ability_suppressed)
+        if suppressed and info and player:
+            chosen_info, distortion_strategy = self._apply_suppression_to_info(game_state, role_id, info, player)
+
+        candidates: list[dict[str, Any]] = []
+        if info:
+            candidates.append(
+                {
+                    "kind": "truthful",
+                    "selected": not suppressed,
+                    "info": self._jsonable(info),
+                    "source": info_source,
+                    "contract_mode": contract_mode,
+                }
+            )
+        if suppressed and chosen_info:
+            candidates.append(
+                {
+                    "kind": "suppressed_variant",
+                    "selected": True,
+                    "info": self._jsonable(chosen_info),
+                    "source": info_source,
+                    "contract_mode": contract_mode,
+                    "distortion_strategy": distortion_strategy,
+                }
+            )
+
+        return {
+            "game_id": game_state.game_id,
+            "script_id": game_state.config.script_id if game_state.config else "trouble_brewing",
+            "seed": game_state.payload.get("seed"),
+            "round_number": game_state.round_number,
+            "day_number": game_state.day_number,
+            "phase": game_state.phase.value,
+            "player_id": player_id,
+            "role_id": role_id,
+            "players_truth": self._build_truth_view(game_state),
+            "players_public_state": self._build_public_state_view(game_state),
+            "event_log_so_far": self._build_event_log_so_far(game_state),
+            "private_delivery_history": self._build_private_delivery_history(game_state),
+            "storyteller_context": self._build_storyteller_context(game_state),
+            "candidate_adjudications": candidates,
+            "chosen_adjudication": {
+                "info": self._jsonable(chosen_info),
+                "source": info_source,
+                "contract_mode": contract_mode,
+                "adjudication_path": adjudication_path,
+                "distortion_strategy": distortion_strategy,
+                "suppressed": suppressed,
+            },
+        }
 
     async def decide_drunk_role(self, script: Any, in_play_roles: list[str]) -> str:
         from src.engine.roles.base_role import get_role_class
@@ -166,25 +341,30 @@ class StorytellerAgent:
             return False
         return role_cls.uses_storyteller_adjudication()
 
-    def _build_base_info(self, game_state: GameState, player_id: str, role_id: str) -> tuple[dict, str]:
+    def _build_base_info(self, game_state: GameState, player_id: str, role_id: str) -> tuple[dict, str, str]:
         from src.engine.roles.base_role import get_role_class
 
         player = game_state.get_player(player_id)
         if not player:
-            return {}, "missing_player"
+            return {}, "missing_player", "unavailable"
         role_cls = get_role_class(role_id)
         if not role_cls:
-            return {}, "missing_role"
+            return {}, "missing_role", "unavailable"
         role = role_cls()
+        contract_mode = "fixed_info" if role_cls.is_fixed_info_role() else "storyteller_info"
         info = role.build_storyteller_info(game_state, player) or {}
         if info:
-            return info, "build_storyteller_info"
+            return info, "build_storyteller_info", contract_mode
         legacy_info = role.get_night_info(game_state, player) or {}
         if legacy_info:
-            return legacy_info, "legacy_get_night_info"
-        return {}, "empty"
+            return legacy_info, "legacy_get_night_info", f"{contract_mode}.legacy_fallback"
+        return {}, "empty", contract_mode
 
-    def _classify_info_scope(self, game_state: GameState, role_id: str, player: Any, info_source: str, suppressed: bool) -> str:
+    def _adjudicate_raw_info(self, game_state: GameState, player_id: str, role_id: str) -> tuple[dict, str, str]:
+        info, info_source, contract_mode = self._build_base_info(game_state, player_id, role_id)
+        return info, info_source, contract_mode
+
+    def _classify_info_scope(self, role_id: str, info_source: str, suppressed: bool) -> str:
         from src.engine.roles.base_role import get_role_class
 
         role_cls = get_role_class(role_id)
@@ -195,6 +375,90 @@ class StorytellerAgent:
         if info_source == "legacy_get_night_info":
             return "legacy_info.suppressed" if suppressed else "legacy_info"
         return "storyteller_info.suppressed" if suppressed else "storyteller_info"
+
+    def _resolve_adjudication_path(self, role_id: str, info_source: str) -> str:
+        from src.engine.roles.base_role import get_role_class
+
+        role_cls = get_role_class(role_id)
+        if info_source == "legacy_get_night_info":
+            if role_cls and role_cls.is_fixed_info_role():
+                return "fixed_info.legacy_fallback"
+            if role_cls and role_cls.uses_storyteller_adjudication():
+                return "storyteller_info.legacy_fallback"
+            return "legacy_fallback"
+        if role_cls and role_cls.is_fixed_info_role():
+            return "fixed_info.adjudicated"
+        if role_cls and role_cls.uses_storyteller_adjudication():
+            return "storyteller_info.adjudicated"
+        return "adjudicated"
+
+    def _distort_fixed_info(self, game_state: GameState, role_id: str, info: dict, player: Any) -> tuple[dict, str]:
+        distorted = dict(info)
+        actor_id = getattr(player, "player_id", None)
+        if role_id in {"washerwoman", "librarian", "investigator"}:
+            preferred_type = {
+                "washerwoman": RoleType.TOWNSFOLK,
+                "librarian": RoleType.OUTSIDER,
+                "investigator": RoleType.MINION,
+            }.get(role_id)
+            target_player = self._pick_false_target_player(game_state, actor_id, preferred_type)
+            if target_player:
+                decoys = [p.player_id for p in game_state.players if p.player_id not in {actor_id, target_player.player_id}]
+                pair = [target_player.player_id]
+                if decoys:
+                    pair.append(random.choice(decoys))
+                random.shuffle(pair)
+                distorted["players"] = pair
+                distorted["role_seen"] = target_player.true_role_id or target_player.role_id
+            if role_id == "librarian":
+                distorted["has_outsider"] = True
+            return distorted, f"{role_id}_pair_role_seen_distortion"
+        if role_id == "chef":
+            distorted["pairs"] = max(0, min(game_state.alive_count, distorted.get("pairs", 0) + 1))
+            return distorted, "chef_pairs_offset"
+        if role_id == "empath":
+            distorted["evil_count"] = 1 if distorted.get("evil_count", 0) == 0 else 0
+            return distorted, "empath_binary_flip"
+        if role_id == "undertaker":
+            distorted["role_seen"] = random.choice([p.true_role_id or p.role_id for p in game_state.players])
+            return distorted, "undertaker_random_role_seen"
+        if role_id == "spy":
+            book = [dict(entry) for entry in distorted.get("book", [])]
+            if book:
+                idx = 0 if len(book) == 1 else random.randrange(len(book))
+                entry = dict(book[idx])
+                actual_role = entry.get("role_id")
+                false_role_type = self._role_type_for_role_id(actual_role)
+                false_role_ids = self._role_ids_of_type(false_role_type, exclude_role_id=actual_role) if false_role_type else []
+                if not false_role_ids:
+                    false_role_ids = [role for role in self._all_role_ids() if role != actual_role]
+                if false_role_ids:
+                    false_role = random.choice(false_role_ids)
+                    false_role_cls = self._role_class(false_role)
+                    if false_role_cls:
+                        entry["role_id"] = false_role
+                        entry["team"] = false_role_cls.get_definition().team.value
+                book[idx] = entry
+                distorted["book"] = book
+            return distorted, "spy_book_single_entry_distortion"
+        return distorted, "fixed_info_passthrough"
+
+    def _distort_storyteller_info(self, role_id: str, info: dict) -> tuple[dict, str]:
+        distorted = dict(info)
+        if role_id == "fortune_teller":
+            distorted["has_demon"] = not distorted.get("has_demon", False)
+            return distorted, "fortune_teller_boolean_flip"
+        return distorted, "storyteller_info_passthrough"
+
+    def _apply_suppression_to_info(self, game_state: GameState, role_id: str, info: dict, player: Any) -> tuple[dict, str]:
+        from src.engine.roles.base_role import get_role_class
+
+        role_cls = get_role_class(role_id)
+        if role_cls and role_cls.is_fixed_info_role():
+            return self._distort_fixed_info(game_state, role_id, info, player)
+        if role_cls and role_cls.uses_storyteller_adjudication():
+            return self._distort_storyteller_info(role_id, info)
+        return dict(info), "generic_passthrough"
 
     def _pick_false_role_seen(self, game_state: GameState, role_id: str, excluded_roles: set[str]) -> str:
         from src.engine.roles.base_role import get_all_role_ids, get_role_class
@@ -228,6 +492,30 @@ class StorytellerAgent:
 
         return random.choice(candidate_roles) if candidate_roles else "unknown"
 
+    def _role_type_for_role_id(self, role_id: str | None) -> RoleType | None:
+        if not role_id:
+            return None
+        role_cls = self._role_class(role_id)
+        if not role_cls:
+            return None
+        return role_cls.get_definition().role_type
+
+    def _pick_false_target_player(
+        self,
+        game_state: GameState,
+        actor_id: str | None,
+        preferred_type: RoleType | None,
+    ) -> Any:
+        eligible_players = [p for p in game_state.players if p.player_id != actor_id]
+        if not eligible_players:
+            return None
+        typed_players = [
+            p for p in eligible_players
+            if preferred_type and self._role_type_for_role_id(p.true_role_id or p.role_id) == preferred_type
+        ]
+        pool = typed_players or eligible_players
+        return random.choice(pool)
+
     async def decide_night_info(self, game_state: GameState, player_id: str, role_id: str) -> dict:
         player = game_state.get_player(player_id)
         if not player:
@@ -244,10 +532,12 @@ class StorytellerAgent:
                 reason="no_storyteller_info",
                 player_id=player_id,
                 role_id=role_id,
+                phase=game_state.phase.value,
+                round_number=game_state.round_number,
             )
             return {}
 
-        info, info_source = self._build_base_info(game_state, player_id, role_id)
+        info, info_source, contract_mode = self._adjudicate_raw_info(game_state, player_id, role_id)
         if not info:
             storyteller_logger.info(
                 "[decide_night_info] player=%s role=%s skipped=no_info",
@@ -261,12 +551,16 @@ class StorytellerAgent:
                 player_id=player_id,
                 role_id=role_id,
                 source=info_source,
+                contract_mode=contract_mode,
+                phase=game_state.phase.value,
+                round_number=game_state.round_number,
             )
             return {}
 
-        info_scope = self._classify_info_scope(game_state, role_id, player, info_source, player.ability_suppressed)
+        info_scope = self._classify_info_scope(role_id, info_source, player.ability_suppressed)
+        adjudication_path = self._resolve_adjudication_path(role_id, info_source)
         if player.ability_suppressed:
-            distorted = self._distort_info(game_state, role_id, info, player)
+            distorted, distortion_strategy = self._apply_suppression_to_info(game_state, role_id, info, player)
             storyteller_logger.info(
                 "[decide_night_info] player=%s role=%s suppressed=true info_type=%s summary=%s",
                 player_id,
@@ -283,6 +577,11 @@ class StorytellerAgent:
                 scope=info_scope,
                 summary=self._summarize_info(distorted),
                 source=info_source,
+                contract_mode=contract_mode,
+                adjudication_path=adjudication_path,
+                distortion_strategy=distortion_strategy,
+                phase=game_state.phase.value,
+                round_number=game_state.round_number,
             )
             return distorted
         storyteller_logger.info(
@@ -301,6 +600,11 @@ class StorytellerAgent:
             scope=info_scope,
             summary=self._summarize_info(info),
             source=info_source,
+            contract_mode=contract_mode,
+            adjudication_path=adjudication_path,
+            distortion_strategy="none",
+            phase=game_state.phase.value,
+            round_number=game_state.round_number,
         )
         return info
 
@@ -318,47 +622,6 @@ class StorytellerAgent:
         if "teammates" in info and isinstance(info["teammates"], list):
             summary_bits.append(f"teammates={len(info['teammates'])}")
         return ", ".join(summary_bits) if summary_bits else "details_present"
-
-    def _distort_info(self, game_state: GameState, role_id: str, info: dict, player: Any) -> dict:
-        distorted = dict(info)
-        actor_id = getattr(player, "player_id", None)
-        if role_id in {"washerwoman", "librarian", "investigator"}:
-            candidate_ids = [p.player_id for p in game_state.players if p.player_id != actor_id]
-            random.shuffle(candidate_ids)
-            distorted["players"] = candidate_ids[:2]
-            excluded_roles: set[str] = set()
-            if distorted.get("role_seen"):
-                excluded_roles.add(str(distorted["role_seen"]))
-            distorted["role_seen"] = self._pick_false_role_seen(game_state, role_id, excluded_roles)
-            if role_id == "librarian":
-                distorted["has_outsider"] = True
-        elif role_id == "chef":
-            distorted["pairs"] = max(0, min(game_state.alive_count, distorted.get("pairs", 0) + 1))
-        elif role_id == "empath":
-            distorted["evil_count"] = 1 if distorted.get("evil_count", 0) == 0 else 0
-        elif role_id == "undertaker":
-            distorted["role_seen"] = random.choice([p.true_role_id or p.role_id for p in game_state.players])
-        elif role_id == "fortune_teller":
-            distorted["has_demon"] = not distorted.get("has_demon", False)
-        elif role_id == "spy":
-            book = [dict(entry) for entry in distorted.get("book", [])]
-            if book:
-                idx = 0 if len(book) == 1 else random.randrange(len(book))
-                entry = dict(book[idx])
-                actual_role = entry.get("role_id")
-                false_role_type = self._role_type_for_role_id(actual_role)
-                false_role_ids = self._role_ids_of_type(false_role_type, exclude_role_id=actual_role) if false_role_type else []
-                if not false_role_ids:
-                    false_role_ids = [role for role in self._all_role_ids() if role != actual_role]
-                if false_role_ids:
-                    false_role = random.choice(false_role_ids)
-                    false_role_cls = self._role_class(false_role)
-                    if false_role_cls:
-                        entry["role_id"] = false_role
-                        entry["team"] = false_role_cls.get_definition().team.value
-                book[idx] = entry
-                distorted["book"] = book
-        return distorted
 
     def _all_role_ids(self) -> list[str]:
         from src.engine.roles.base_role import get_all_role_ids
@@ -379,14 +642,6 @@ class StorytellerAgent:
             if role_cls and role_cls.get_definition().role_type == role_type:
                 ids.append(role_id)
         return ids
-
-    def _role_type_for_role_id(self, role_id: str | None) -> RoleType | None:
-        if not role_id:
-            return None
-        role_cls = self._role_class(role_id)
-        if not role_cls:
-            return None
-        return role_cls.get_definition().role_type
 
     async def narrate_phase(self, game_state: GameState) -> str:
         phase_names = {

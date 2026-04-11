@@ -129,12 +129,13 @@ class NominationManager:
     ) -> tuple[GameState, list[GameEvent]]:
         candidate = RuleEngine.get_execution_candidate(game_state)
         if not candidate:
+            reason = "no_nomination" if not game_state.nominations_today else "no_execution"
             event = GameEvent(
                 event_type="execution_resolved",
                 phase=GamePhase.EXECUTION,
                 round_number=game_state.round_number,
                 trace_id=trace_id,
-                payload={"executed": None},
+                payload={"executed": None, "reason": reason},
                 visibility=Visibility.PUBLIC,
             )
             new_state = game_state.with_update(

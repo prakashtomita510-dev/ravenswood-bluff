@@ -95,6 +95,8 @@ class GameOrchestrator:
         storyteller_logger.info("[%s] %s", event, " ".join(parts) if parts else "")
 
     def _record_storyteller_judgement(self, category: str, decision: str, reason: str | None = None, **fields: Any) -> None:
+        fields.setdefault("phase", self.state.phase.value)
+        fields.setdefault("round_number", self.state.round_number)
         if self.storyteller_agent and hasattr(self.storyteller_agent, "record_judgement"):
             self.storyteller_agent.record_judgement(category, decision, reason, **fields)
             return
@@ -396,6 +398,7 @@ class GameOrchestrator:
         evil_players = [p for p in self.state.players if (p.current_team or p.team) == Team.EVIL]
         for player in evil_players:
             teammates = [p.name for p in evil_players if p.player_id != player.player_id]
+            bluffs = list(self.state.bluffs)
             await self._publish_private_info(
                 phase=GamePhase.FIRST_NIGHT,
                 target=player.player_id,
@@ -404,7 +407,7 @@ class GameOrchestrator:
                     "type": "evil_reveal",
                     "title": "邪恶阵营互认",
                     "teammates": teammates,
-                    "bluffs": list(self.state.bluffs) if player.true_role_id == "imp" else [],
+                    "bluffs": bluffs,
                 },
             )
             self._record_storyteller_judgement(
@@ -413,7 +416,7 @@ class GameOrchestrator:
                 phase="first_night",
                 player_id=player.player_id,
                 teammates=teammates,
-                bluffs=list(self.state.bluffs) if player.true_role_id == "imp" else [],
+                bluffs=bluffs,
             )
         await self._execute_night_actions(GamePhase.FIRST_NIGHT)
         await self._distribute_night_info(GamePhase.FIRST_NIGHT)
@@ -820,8 +823,15 @@ class GameOrchestrator:
                     votes_cast=0,
                     yes_votes=0,
                     round=nomination_round,
-                    last_result={"executed": None} if not had_any_nomination else self.state.payload.get("nomination_state", {}).get("last_result", {"executed": None}),
+                    last_result={"executed": None, "reason": "no_nomination"} if not had_any_nomination else self.state.payload.get("nomination_state", {}).get("last_result", {"executed": None}),
                 )
+                if not had_any_nomination:
+                    self._append_nomination_history({
+                        "kind": "no_nomination",
+                        "round": nomination_round,
+                        "reason": "no_legal_intent",
+                        "trace_id": self._make_trace_id("BOTC-FLOW-NOM-NONE"),
+                    })
                 self._log_storyteller(
                     "nomination_round_no_nomination",
                     round=nomination_round,
@@ -856,8 +866,16 @@ class GameOrchestrator:
                     result_phase="invalid_nomination",
                     reason=str(exc),
                     round=nomination_round,
-                    last_result={"executed": None},
+                    last_result={"executed": None, "reason": "invalid_nomination"},
                 )
+                self._append_nomination_history({
+                    "kind": "invalid_nomination",
+                    "round": nomination_round,
+                    "nominator": nominator_id,
+                    "nominee": target_id,
+                    "reason": str(exc),
+                    "trace_id": trace_id,
+                })
                 self._log_storyteller(
                     "nomination_invalid",
                     round=nomination_round,
@@ -922,6 +940,7 @@ class GameOrchestrator:
                 nominator=nominator_id,
                 nominee=target_id,
                 threshold=RuleEngine.votes_required(self.state),
+                trace_id=trace_id,
             )
             if await self._handle_virgin_trigger(nominator_id, target_id, trace_id):
                 self._update_payload(skip_execution_finalize=True)
@@ -952,6 +971,7 @@ class GameOrchestrator:
                     round=nomination_round,
                     nominator=nominator_id,
                     nominee=target_id,
+                    trace_id=trace_id,
                 )
                 break
 
@@ -968,6 +988,7 @@ class GameOrchestrator:
                 round=nomination_round,
                 nominee=target_id,
                 votes=self.state.votes_today,
+                trace_id=trace_id,
             )
             if not self._can_continue_nomination_rounds(nomination_round, max_rounds):
                 break

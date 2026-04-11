@@ -206,8 +206,104 @@ def test_build_nomination_state_preserves_payload_vote_details(monkeypatch):
     assert nomination_state["yes_votes"] == 1
     assert nomination_state["defense_text"] == "I am not the demon."
     assert nomination_state["result_phase"] == "vote_resolved"
+    assert nomination_state["is_terminal"] is False
+    assert nomination_state["has_current_round"] is True
+    assert nomination_state["has_history"] is True
     assert nomination_state["history"][0]["kind"] == "nomination_started"
     assert nomination_state["history"][1]["kind"] == "voting_resolved"
+
+
+def test_build_nomination_state_clears_terminal_state(monkeypatch):
+    monkeypatch.setenv("BOTC_BACKEND", "mock")
+    import src.api.server as server_module
+
+    server_module = importlib.reload(server_module)
+    orchestrator = server_module.build_fresh_orchestrator("mock")
+    orchestrator.state = GameState(
+        phase=GamePhase.EXECUTION,
+        players=(
+            PlayerState(player_id="p1", name="One", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Two", role_id="imp", team=Team.EVIL),
+        ),
+        payload={
+            "nomination_state": {
+                "stage": "executed",
+                "result_phase": "execution_resolved",
+                "current_nominator": "p1",
+                "current_nominee": "p2",
+                "yes_votes": 2,
+                "votes_cast": 2,
+                "votes": {"p1": True, "p2": True},
+                "defense_text": "I am not the demon.",
+                "last_result": {"executed": "p2", "votes": 2},
+            },
+            "nomination_history": [
+                {
+                    "kind": "nomination_started",
+                    "round": 1,
+                    "nominator": "p1",
+                    "nominee": "p2",
+                },
+                {
+                    "kind": "execution_resolved",
+                    "round": 1,
+                    "executed": "p2",
+                    "votes": 2,
+                },
+            ],
+        },
+    )
+
+    nomination_state = server_module.build_nomination_state(orchestrator)
+
+    assert nomination_state["is_terminal"] is True
+    assert nomination_state["has_current_round"] is False
+    assert nomination_state["current_nominator"] is None
+    assert nomination_state["current_nominee"] is None
+    assert nomination_state["votes"] == {}
+    assert nomination_state["votes_cast"] == 0
+    assert nomination_state["yes_votes"] == 0
+    assert nomination_state["history"][-1]["kind"] == "execution_resolved"
+
+
+def test_build_nomination_state_marks_no_nomination_terminal(monkeypatch):
+    monkeypatch.setenv("BOTC_BACKEND", "mock")
+    import src.api.server as server_module
+
+    server_module = importlib.reload(server_module)
+    orchestrator = server_module.build_fresh_orchestrator("mock")
+    orchestrator.state = GameState(
+        phase=GamePhase.EXECUTION,
+        players=(
+            PlayerState(player_id="p1", name="One", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Two", role_id="imp", team=Team.EVIL),
+        ),
+        payload={
+            "nomination_state": {
+                "stage": "no_nomination",
+                "result_phase": "no_nomination",
+                "current_nominator": "p1",
+                "current_nominee": "p2",
+                "last_result": {"executed": None, "reason": "no_nomination"},
+            },
+            "nomination_history": [
+                {
+                    "kind": "no_nomination",
+                    "round": 1,
+                    "reason": "no_legal_intent",
+                }
+            ],
+        },
+    )
+
+    nomination_state = server_module.build_nomination_state(orchestrator)
+
+    assert nomination_state["is_terminal"] is True
+    assert nomination_state["has_current_round"] is False
+    assert nomination_state["current_nominator"] is None
+    assert nomination_state["current_nominee"] is None
+    assert nomination_state["last_result"]["reason"] == "no_nomination"
+    assert nomination_state["history"][0]["kind"] == "no_nomination"
 
 
 def test_build_nomination_state_infers_history_from_event_log(monkeypatch):
@@ -271,7 +367,7 @@ async def test_storyteller_log_is_written_without_api_leak(monkeypatch):
             pass
         logging.getLogger("storyteller").removeHandler(handler)
 
-    test_dir = Path.cwd() / f"_storyteller_test_workspace_{uuid.uuid4().hex[:8]}"
+    test_dir = Path(__file__).parent.parent / "test_runs" / f"_storyteller_test_workspace_{uuid.uuid4().hex[:8]}"
     test_dir.mkdir(exist_ok=True)
     monkeypatch.chdir(test_dir)
     log_path = Path("storyteller_run.log")
