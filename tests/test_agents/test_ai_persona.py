@@ -22,6 +22,12 @@ class CapturingBackend(LLMBackend):
         return "capturing-model"
 
 
+def _agent_ctx(agent: AIAgent, state: GameState):
+    visible_state = agent._build_visible_state(state)
+    legal_context = agent._build_legal_action_context(state, visible_state)
+    return visible_state, legal_context
+
+
 def _build_state() -> GameState:
     players = (
         PlayerState(player_id="p1", name="Alice", role_id="washerwoman", team=Team.GOOD),
@@ -83,7 +89,8 @@ async def test_ai_persona_prompt_includes_stable_role_hint_and_action_guidance()
     state = _build_state()
     agent.synchronize_role(state.get_player("p1"))
 
-    await agent.act(state, "speak")
+    visible_state, legal_context = _agent_ctx(agent, state)
+    await agent.act(visible_state, "speak", legal_context=legal_context)
 
     assert backend.calls, "backend 应该收到系统提示词"
     prompt = backend.calls[-1]
@@ -118,8 +125,10 @@ async def test_ai_persona_profile_differs_by_player_id():
     agent_a.synchronize_role(state.get_player("p1"))
     agent_b.synchronize_role(state.get_player("p2"))
 
-    await agent_a.act(state, "speak")
-    await agent_b.act(state, "speak")
+    visible_state_a, legal_context_a = _agent_ctx(agent_a, state)
+    visible_state_b, legal_context_b = _agent_ctx(agent_b, state)
+    await agent_a.act(visible_state_a, "speak", legal_context=legal_context_a)
+    await agent_b.act(visible_state_b, "speak", legal_context=legal_context_b)
 
     assert agent_a.persona_signature != agent_b.persona_signature
     assert agent_a.persona_profile != agent_b.persona_profile
@@ -147,7 +156,8 @@ async def test_ai_persona_nomination_skips_when_signal_is_weak():
     state = _build_state()
     agent.synchronize_role(state.get_player("p1"))
 
-    decision = await agent.act(state, "nominate")
+    visible_state, legal_context = _agent_ctx(agent, state)
+    decision = await agent.act(visible_state, "nominate", legal_context=legal_context)
 
     assert decision["action"] in {"none", "nominate"}
     assert decision["action"] == "none"
@@ -176,7 +186,8 @@ async def test_ai_persona_nomination_fires_when_signal_is_strong():
     agent.social_graph.init_player("p2", "Bob")
     agent.social_graph.update_trust("p2", -0.9)
 
-    decision = await agent.act(state, "nominate")
+    visible_state, legal_context = _agent_ctx(agent, state)
+    decision = await agent.act(visible_state, "nominate", legal_context=legal_context)
 
     assert decision["action"] == "nominate"
     assert decision["target"] == "p2"
@@ -216,7 +227,8 @@ async def test_ai_persona_vote_respects_suspicion_threshold():
     )
     agent.synchronize_role(state.get_player("p1"))
 
-    decision = await agent.act(state, "vote")
+    visible_state, legal_context = _agent_ctx(agent, state)
+    decision = await agent.act(visible_state, "vote", legal_context=legal_context)
 
     assert decision["action"] == "vote"
     assert isinstance(decision["decision"], bool)

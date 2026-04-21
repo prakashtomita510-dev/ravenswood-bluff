@@ -225,6 +225,46 @@ class PrivatePlayerView(BaseModel):
     public_claim_role_id: Optional[str] = None
     current_team: Team
     is_alive: bool = True
+    ghost_votes_remaining: int = 1
+
+
+class VisiblePlayerInfo(BaseModel):
+    """AI 可见的公开玩家状态。"""
+
+    player_id: str
+    name: str
+    is_alive: bool = True
+
+
+class AgentVisibleState(BaseModel):
+    """供 AI 决策使用的受限可见上下文。"""
+
+    game_id: str
+    phase: GamePhase
+    round_number: int
+    day_number: int
+    self_view: Optional[PrivatePlayerView] = None
+    players: tuple[VisiblePlayerInfo, ...] = ()
+    current_nominee: Optional[str] = None
+    current_nominator: Optional[str] = None
+    seat_order: tuple[str, ...] = ()
+    nominations_today: tuple[str, ...] = ()
+    nominees_today: tuple[str, ...] = ()
+    yes_votes: int = 0
+    voted_player_ids: tuple[str, ...] = ()
+    public_chat_history: tuple[ChatMessage, ...] = ()
+    visible_event_log: tuple[GameEvent, ...] = ()
+
+
+class AgentActionLegalContext(BaseModel):
+    """供 AI 决策使用的合法动作快照。"""
+
+    legal_nomination_targets: tuple[str, ...] = ()
+    legal_night_targets: tuple[str, ...] = ()
+    votes_required: int = 0
+    remaining_voters: tuple[str, ...] = ()
+    required_targets: int = 1
+    can_target_self: bool = False
 
 
 class ExecutionCandidate(BaseModel):

@@ -24,6 +24,58 @@ class NominationManager:
         if not is_legal:
             raise ValueError(f"提名无效: {reason}")
 
+        # 圣女 (Virgin) 逻辑
+        from src.engine.roles.base_role import get_role_class
+        nominee_player = game_state.get_player(nominee_id)
+        if nominee_player and nominee_player.is_alive and not nominee_player.ability_suppressed:
+            role_id = nominee_player.true_role_id or nominee_player.role_id
+            if role_id == "virgin":
+                nominator_player = game_state.get_player(nominator_id)
+                if nominator_player:
+                    nominator_role_id = nominator_player.true_role_id or nominator_player.role_id
+                    nominator_cls = get_role_class(nominator_role_id)
+                    # 如果提名者是村民角色 (Townsfolk) 且由于圣女是该玩家当日被第一名提名，圣女技能触发
+                    # 简化逻辑：如果是该圣女第一次被提名且有效
+                    is_first_nomination = nominee_id not in game_state.nominees_today
+                    if nominator_cls and nominator_cls.get_definition().role_type == RoleType.TOWNSFOLK and is_first_nomination:
+                        # 触发裁决逻辑：提名者由于该次特殊规则被处决
+                        # 我们生成一个特殊的事件，并标记当日不再接受新提名（处决已发生）
+                        exec_event = GameEvent(
+                            event_type="virgin_trigger",
+                            phase=GamePhase.NOMINATION,
+                            round_number=game_state.round_number,
+                            actor=nominee_id,
+                            target=nominator_id,
+                            visibility=Visibility.PUBLIC,
+                            payload={"reason": "virgin_ability"}
+                        )
+                        # 处决提名者
+                        final_state = game_state.with_player_update(nominator_id, is_alive=False)
+                        death_event = GameEvent(
+                            event_type="player_death",
+                            phase=GamePhase.NOMINATION,
+                            round_number=game_state.round_number,
+                            target=nominator_id,
+                            payload={"reason": "virgin_execution"},
+                            visibility=Visibility.PUBLIC
+                        )
+                        # 结束当日提名 (处决已发生)
+                        last_exec_event = GameEvent(
+                            event_type="execution_resolved",
+                            phase=GamePhase.EXECUTION,
+                            round_number=game_state.round_number,
+                            payload={"executed": nominator_id, "reason": "virgin_trigger"},
+                            visibility=Visibility.PUBLIC
+                        )
+                        # 更新状态使其跳过后续投票环节，直接进入结算或夜晚
+                        final_state = final_state.with_update(
+                            phase=GamePhase.DAY_DISCUSSION, # 回退或标记完成
+                            nominations_today=game_state.nominations_today + (nominator_id,),
+                            nominees_today=game_state.nominees_today + (nominee_id,),
+                        ).with_event(exec_event).with_event(death_event).with_event(last_exec_event)
+                        
+                        return final_state, [exec_event, death_event, last_exec_event]
+
         new_state = game_state.with_update(
             phase=GamePhase.VOTING,
             current_nominator=nominator_id,

@@ -26,12 +26,15 @@
 - [Alpha 0.2 路线图](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/roadmap.md)
 - [Wave 1 任务板](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/wave-1-task-board.md)
 - [Wave 2 任务板](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/wave-2-task-board.md)
+- [Wave 4 任务板](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/wave-4-task-board.md)
 - [AI 玩家智能增强计划](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/ai-player-intelligence-plan.md)
 - [说书人智能优化计划](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/storyteller-intelligence-plan.md)
 - [说书人平衡裁量模拟与评估计划](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/storyteller-balance-simulation-plan.md)
 - [角色业务实现与验证计划](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/role-implementation-and-validation-plan.md)
 - [前端界面优化计划](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/frontend-ui-optimization-plan.md)
 - [自动化验收与测试计划](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/acceptance-and-testing-plan.md)
+- [游戏结算与复盘系统开发计划](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/gameover_implementation_plan.md)
+- [Alpha 0.2 当前进度说明](/d:/鸦木布拉夫小镇/docs/alpha-0.2-plan/current-status.md)
 
 ---
 
@@ -53,6 +56,7 @@
 
 - 推进更强的说书人主观裁定能力
 - 做前端自动化验收与体验收敛
+- 实现 Game Over 结算、历史记录与 Rematch
 - 为后续 beta 版本打基础
 
 ---

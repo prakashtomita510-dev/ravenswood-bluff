@@ -6,10 +6,14 @@
 
 from __future__ import annotations
 
+import logging
 import random
 from typing import Any, Optional
 
 from src.engine.roles.base_role import BaseRole, register_role
+
+
+logger = logging.getLogger(__name__)
 from src.state.game_state import (
     Ability,
     AbilityTrigger,
@@ -63,18 +67,6 @@ class WasherwomanRole(BaseRole):
             ),
         )
 
-    def execute_ability(
-        self,
-        game_state: GameState,
-        actor: PlayerState,
-        target: Optional[str] = None,
-        **kwargs: Any,
-    ) -> tuple[GameState, list[GameEvent]]:
-        # 在AI系统中，信息获取能力通常表现为其 get_night_info 被说书人/引擎调用。
-        # 实际修改游戏状态的"主动技能"才需要在此处实现复杂逻辑。
-        # 记录使用了技能。
-        return game_state, []
-
     def build_storyteller_info(
         self,
         game_state: GameState,
@@ -84,13 +76,19 @@ class WasherwomanRole(BaseRole):
         if not _is_first_night(game_state):
             return None
 
-        # 如果中毒，可能会获得假信息（这通常由编排器决定，这里只提供基础真实逻辑）
+        # 优先从持久化记录中读取
+        key = f"initial_info:washerwoman:{actor.player_id}"
+        memo = game_state.payload.get(key)
+        if memo:
+            return memo
+
+        # 如果中毒，可能会获得假信息
         # 1. 找到在场的所有其他村民
         townsfolks = [
             p for p in game_state.players 
             if p.player_id != actor.player_id 
             and (p.true_role_id or p.role_id) != "washerwoman"
-            and self._is_townsfolk_role(p.true_role_id or p.role_id)
+            and self._is_townsfolk_role(game_state, p)
         ]
         
         if not townsfolks:
@@ -101,11 +99,32 @@ class WasherwomanRole(BaseRole):
         target_role_id = target_player.true_role_id or target_player.role_id
         pair = _pick_decoy_pair(game_state, actor.player_id, target_player.player_id)
         
-        return {
+        info = {
             "type": "washerwoman_info",
             "players": pair,
             "role_seen": target_role_id
         }
+        # 注意：在这里无法直接修改 game_state (只读视图)，持久化逻辑通常应在 Orchestrator 产生的 execute_ability 中
+        return info
+
+    def execute_ability(self, game_state, actor, target=None, **kwargs):
+        # 如果是首夜，生成信息并持久化
+        if _is_first_night(game_state):
+            info = self.build_storyteller_info(game_state, actor)
+            if info:
+                key = f"initial_info:washerwoman:{actor.player_id}"
+                new_payload = dict(game_state.payload)
+                new_payload[key] = info
+                return game_state.with_update(payload=new_payload), []
+        return game_state, []
+
+    def _is_townsfolk_role(self, game_state: GameState, player: PlayerState) -> bool:
+        from src.engine.roles.base_role import get_role_class
+        role_id = player.true_role_id or player.role_id
+        cls = get_role_class(role_id)
+        if not cls: return False
+        role_instance = cls()
+        return role_instance.registers_as_role_type(game_state, player) == RoleType.TOWNSFOLK
 
     def get_night_info(
         self,
@@ -114,12 +133,6 @@ class WasherwomanRole(BaseRole):
     ) -> Optional[dict]:
         return self.build_storyteller_info(game_state, actor)
 
-    def _is_townsfolk_role(self, role_id: str) -> bool:
-        from src.engine.roles.base_role import get_role_class
-        cls = get_role_class(role_id)
-        if cls:
-            return cls.get_definition().role_type == RoleType.TOWNSFOLK
-        return False
 
 
 @register_role("empath")
@@ -180,13 +193,12 @@ class EmpathRole(BaseRole):
 
         def _is_evil(player_state: Any) -> bool:
             if not player_state: return False
-            if (player_state.current_team or player_state.team) == Team.EVIL:
-                return True
             from src.engine.roles.base_role import get_role_class
             role_cls = get_role_class(player_state.true_role_id or player_state.role_id)
-            if role_cls and getattr(role_cls, "registers_as_evil_for_detection", lambda: False)():
-                return True
-            return False
+            if role_cls:
+                role_instance = role_cls()
+                return role_instance.registers_as_team(game_state, player_state) == Team.EVIL
+            return (player_state.current_team or player_state.team) == Team.EVIL
 
         evil_count = 0
         left_player = game_state.get_player(seat_order[left_idx])
@@ -246,20 +258,30 @@ class UndertakerRole(BaseRole):
             fake = random.choice(get_all_role_ids())
             return {"type": "undertaker_info", "role_seen": fake}
             
-        # 查找今天白天被处决的人
-        # 遍历事件日志，寻找类型为 player_death 且理由为 execution 的事件
+        # 只查找“今天白天”被处决的人，不能错误读取更早轮次的旧处决结果。
         target_role = None
+        target_player_id = None
         for event in reversed(game_state.event_log):
-            if event.event_type == "execution_resolved" and event.payload.get("executed"):
+            if (
+                event.event_type == "execution_resolved"
+                and event.round_number == game_state.round_number
+                and event.payload.get("executed")
+            ):
                 victim = game_state.get_player(event.payload["executed"])
                 if victim:
                     target_role = victim.true_role_id or victim.role_id
+                    target_player_id = victim.player_id
                     break
         
         if not target_role:
             return None
             
-        return {"type": "undertaker_info", "role_seen": target_role}
+        # 允许说书人通过 payload 覆盖 (处理中毒/醉酒的假信息)
+        key = f"undertaker_override:{game_state.round_number}"
+        if key in game_state.payload:
+            return {"type": "undertaker_info", "role_seen": game_state.payload[key], "player_id": target_player_id}
+
+        return {"type": "undertaker_info", "role_seen": target_role, "player_id": target_player_id}
 
     def get_night_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
         return self.build_storyteller_info(game_state, actor)
@@ -288,22 +310,25 @@ class ChefRole(BaseRole):
             ),
         )
 
-    def execute_ability(self, game_state, actor, target=None, **kwargs):
-        return game_state, []
 
-    def build_storyteller_info(self, game_state, actor):
+    def build_storyteller_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
         if not _is_first_night(game_state):
             return None
 
+        # 优先从持久化记录中读取
+        key = f"initial_info:chef:{actor.player_id}"
+        memo = game_state.payload.get(key)
+        if memo:
+            return memo
+
         def _is_evil(player_state: Any) -> bool:
             if not player_state: return False
-            if (player_state.current_team or player_state.team) == Team.EVIL:
-                return True
             from src.engine.roles.base_role import get_role_class
             role_cls = get_role_class(player_state.true_role_id or player_state.role_id)
-            if role_cls and getattr(role_cls, "registers_as_evil_for_detection", lambda: False)():
-                return True
-            return False
+            if role_cls:
+                role_instance = role_cls()
+                return role_instance.registers_as_team(game_state, player_state) == Team.EVIL
+            return (player_state.current_team or player_state.team) == Team.EVIL
 
         seat_order = game_state.seat_order
         n = len(seat_order)
@@ -313,7 +338,28 @@ class ChefRole(BaseRole):
             p2 = game_state.get_player(seat_order[(i+1)%n])
             if p1 and p2 and _is_evil(p1) and _is_evil(p2):
                 pairs += 1
-        return {"type": "chef_info", "pairs": pairs}
+        
+        # 如果中毒/醉酒或手动操作，计算出的 truth 仅作为参考，实际应由说书人决定
+        # 在我们的架构中，StorytellerAgent 会在 SETUP 阶段调用此函数生成初始建议，并将其存入 payload
+        info = {"type": "chef_info", "pairs": pairs}
+        
+        if actor.ability_suppressed:
+            # 中毒/醉酒：说书人可以给任何数字。
+            # 这里我们返回一个标记，或者如果 payload 中已经有 ST 的决定，则使用它
+            logger.info(f"[ChefRole] actor {actor.player_id} is suppressed. Info may be false.")
+        
+        logger.info(f"[ChefRole] build_info: actor={actor.player_id} pairs={pairs}")
+        return info
+
+    def execute_ability(self, game_state, actor, target=None, **kwargs):
+        if _is_first_night(game_state):
+            info = self.build_storyteller_info(game_state, actor)
+            if info:
+                key = f"initial_info:chef:{actor.player_id}"
+                new_payload = dict(game_state.payload)
+                new_payload[key] = info
+                return game_state.with_update(payload=new_payload), []
+        return game_state, []
 
     def get_night_info(self, game_state, actor):
         return self.build_storyteller_info(game_state, actor)
@@ -342,28 +388,46 @@ class LibrarianRole(BaseRole):
             ),
         )
 
-    def execute_ability(self, game_state, actor, target=None, **kwargs):
-        return game_state, []
 
     def build_storyteller_info(self, game_state, actor):
         if not _is_first_night(game_state):
             return None
 
-        outsiders = [p for p in game_state.players if p.player_id != actor.player_id and self._is_outsider_role(p.true_role_id or p.role_id)]
+        key = f"initial_info:librarian:{actor.player_id}"
+        memo = game_state.payload.get(key)
+        if memo:
+            return memo
+
+        outsiders = [p for p in game_state.players if p.player_id != actor.player_id and self._is_outsider_role(game_state, p)]
         if not outsiders:
-            return {"type": "librarian_info", "has_outsider": False}
+            info = {"type": "librarian_info", "has_outsider": False}
+        else:
+            target_p = random.choice(outsiders)
+            pair = _pick_decoy_pair(game_state, actor.player_id, target_p.player_id)
+            info = {"type": "librarian_info", "has_outsider": True, "players": pair, "role_seen": target_p.true_role_id or target_p.role_id}
         
-        target_p = random.choice(outsiders)
-        pair = _pick_decoy_pair(game_state, actor.player_id, target_p.player_id)
-        return {"type": "librarian_info", "has_outsider": True, "players": pair, "role_seen": target_p.true_role_id or target_p.role_id}
+        return info
+
+    def execute_ability(self, game_state, actor, target=None, **kwargs):
+        if _is_first_night(game_state):
+            info = self.build_storyteller_info(game_state, actor)
+            if info:
+                key = f"initial_info:librarian:{actor.player_id}"
+                new_payload = dict(game_state.payload)
+                new_payload[key] = info
+                return game_state.with_update(payload=new_payload), []
+        return game_state, []
+
+    def _is_outsider_role(self, game_state: GameState, player: PlayerState):
+        from src.engine.roles.base_role import get_role_class
+        role_id = player.true_role_id or player.role_id
+        cls = get_role_class(role_id)
+        if not cls: return False
+        role_instance = cls()
+        return role_instance.registers_as_role_type(game_state, player) == RoleType.OUTSIDER
 
     def get_night_info(self, game_state, actor):
         return self.build_storyteller_info(game_state, actor)
-
-    def _is_outsider_role(self, role_id):
-        from src.engine.roles.base_role import get_role_class
-        cls = get_role_class(role_id)
-        return cls and cls.get_definition().role_type == RoleType.OUTSIDER
 
 
 @register_role("investigator")
@@ -389,33 +453,46 @@ class InvestigatorRole(BaseRole):
             ),
         )
 
-    def execute_ability(self, game_state, actor, target=None, **kwargs):
-        return game_state, []
 
     def build_storyteller_info(self, game_state, actor):
         if not _is_first_night(game_state):
             return None
 
-        minions = [p for p in game_state.players if p.player_id != actor.player_id and self._is_minion_role(p.true_role_id or p.role_id)]
+        key = f"initial_info:investigator:{actor.player_id}"
+        memo = game_state.payload.get(key)
+        if memo:
+            return memo
+
+        minions = [p for p in game_state.players if p.player_id != actor.player_id and self._is_minion_role(game_state, p)]
         if not minions:
             return None
         
         target_p = random.choice(minions)
         pair = _pick_decoy_pair(game_state, actor.player_id, target_p.player_id)
-        return {"type": "investigator_info", "players": pair, "role_seen": target_p.true_role_id or target_p.role_id}
+        info = {"type": "investigator_info", "players": pair, "role_seen": target_p.true_role_id or target_p.role_id}
+        return info
+
+    def execute_ability(self, game_state, actor, target=None, **kwargs):
+        if _is_first_night(game_state):
+            info = self.build_storyteller_info(game_state, actor)
+            if info:
+                key = f"initial_info:investigator:{actor.player_id}"
+                new_payload = dict(game_state.payload)
+                new_payload[key] = info
+                return game_state.with_update(payload=new_payload), []
+        return game_state, []
+
+    def _is_minion_role(self, game_state: GameState, player: PlayerState):
+        from src.engine.roles.base_role import get_role_class
+        role_id = player.true_role_id or player.role_id
+        cls = get_role_class(role_id)
+        if not cls: return False
+        role_instance = cls()
+        return role_instance.registers_as_role_type(game_state, player) == RoleType.MINION
 
     def get_night_info(self, game_state, actor):
         return self.build_storyteller_info(game_state, actor)
 
-    def _is_minion_role(self, role_id):
-        from src.engine.roles.base_role import get_role_class
-        cls = get_role_class(role_id)
-        if not cls: return False
-        if cls.get_definition().role_type == RoleType.MINION:
-            return True
-        if getattr(cls, "registers_as_evil_for_detection", lambda: False)():
-            return "minion" in getattr(cls, "misread_as_role_types", lambda: tuple())()
-        return False
 
 
 @register_role("fortune_teller")
@@ -441,9 +518,53 @@ class FortuneTellerRole(BaseRole):
             ),
         )
 
-    def execute_ability(self, game_state, actor, target=None, **kwargs):
-        # 预言家由于选两个，这里 target 可能是逗号分隔或 list
-        return game_state, []
+    def get_required_targets(self, game_state: GameState, phase: GamePhase) -> int:
+        return 2
+
+    def can_target_self(self) -> bool:
+        return True
+
+    def execute_ability(self, game_state: GameState, actor: PlayerState, target: Optional[str | list[str]] = None, **kwargs: Any) -> tuple[GameState, list[GameEvent]]:
+        # 预言家由于选两个，这里处理嵌套列表、列表或逗号分隔字符串
+        def flatten_targets(value: Any) -> list[str]:
+            flattened: list[str] = []
+
+            def visit(item: Any) -> None:
+                if item is None:
+                    return
+                if isinstance(item, str):
+                    for piece in item.split(","):
+                        piece = piece.strip()
+                        if piece:
+                            flattened.append(piece)
+                    return
+                if isinstance(item, (list, tuple, set)):
+                    for nested in item:
+                        visit(nested)
+                    return
+                text = str(item).strip()
+                if text:
+                    flattened.append(text)
+
+            visit(value)
+            return flattened
+
+        targets = flatten_targets(kwargs.get("targets")) or flatten_targets(target)
+
+        if len(targets) < 2:
+            raise ValueError("预言家必须选择两名玩家")
+            
+        # 记录行动事件，供 build_storyteller_info 使用
+        event = GameEvent(
+            event_type="night_action_resolved",
+            phase=game_state.phase,
+            round_number=game_state.round_number,
+            actor=actor.player_id,
+            target=targets[0] if targets else None,
+            payload={"targets": targets, "role_id": self.role_id()},
+            visibility=Visibility.STORYTELLER_ONLY
+        )
+        return game_state.with_event(event), [event]
 
     def build_storyteller_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
         # 注意：预言家通常需要主动选择两个目标。在 Orchestrator 中应先请求 act
@@ -476,23 +597,23 @@ class FortuneTellerRole(BaseRole):
             target_p = game_state.get_player(t_id)
             if not target_p: continue
             
-            # 检查是否是真实恶魔
+            # 检查是否表现为恶魔 (含红鲱鱼逻辑)
             from src.engine.roles.base_role import get_role_class
             cls = get_role_class(target_p.true_role_id or target_p.role_id)
-            if cls and (
-                cls.get_definition().role_type == RoleType.DEMON
-                or getattr(cls, "registers_as_evil_for_detection", lambda: False)()
-            ):
-                has_demon = True
-                break
+            if cls:
+                role_instance = cls()
+                if role_instance.registers_as_role_type(game_state, target_p) == RoleType.DEMON:
+                    has_demon = True
+                    break
             
-            # 检查是否是红鲱鱼
+            # 兼容旧有的 red_herring_id 逻辑 (如果角色钩子未覆盖)
             if t_id == red_herring_id:
                 has_demon = True
                 break
         
         return {
             "type": "fortune_teller_info",
+            "players": targets,
             "has_demon": has_demon
         }
 
@@ -523,8 +644,11 @@ class MonkRole(BaseRole):
         )
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
-        if not target or target == actor.player_id:
-            return game_state, []
+        if not target:
+            raise ValueError("僧侣必须选择一名玩家")
+        if target == actor.player_id:
+            raise ValueError("僧侣不能选择自己")
+        
         # 添加保护状态
         from src.state.game_state import PlayerStatus
         new_state = game_state
@@ -574,7 +698,7 @@ class RavenkeeperRole(BaseRole):
             phase=GamePhase.NIGHT,
             round_number=game_state.round_number,
             target=actor.player_id,
-            payload={"role_seen": target_p.true_role_id or target_p.role_id},
+            payload={"role_seen": target_p.true_role_id or target_p.role_id, "player_id": target_p.player_id},
             visibility=Visibility.PRIVATE
         )
         return game_state.with_event(event), [event]

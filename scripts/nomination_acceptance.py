@@ -5,7 +5,13 @@ from __future__ import annotations
 import asyncio
 import importlib
 import os
+import sys
 from types import SimpleNamespace
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.agents.base_agent import BaseAgent
 from src.api.server import build_nomination_state
@@ -36,7 +42,7 @@ class ScriptedAgent(BaseAgent):
         self.actions = actions
         self.counters: dict[str, int] = {}
 
-    async def act(self, game_state, action_type, **kwargs):
+    async def act(self, visible_state, action_type, legal_context=None, **kwargs):
         index = self.counters.get(action_type, 0)
         queue = self.actions.get(action_type, [])
         if index < len(queue):
@@ -44,10 +50,10 @@ class ScriptedAgent(BaseAgent):
             return queue[index]
         return {"action": "none"}
 
-    async def observe_event(self, event, game_state):
+    async def observe_event(self, event, visible_state):
         return None
 
-    async def think(self, prompt, game_state):
+    async def think(self, prompt, visible_state):
         return ""
 
 

@@ -161,6 +161,7 @@ def test_undertaker_reads_executed_role() -> None:
     role = get_role_class("undertaker")()
     state = GameState(
         phase=GamePhase.NIGHT,
+        round_number=1,
         players=(
             make_player("u", "Under", "undertaker", Team.GOOD),
             make_player("x", "Executed", "imp", Team.EVIL),
@@ -178,7 +179,32 @@ def test_undertaker_reads_executed_role() -> None:
 
     info = role.get_night_info(state, state.get_player("u"))
 
-    assert info == {"type": "undertaker_info", "role_seen": "imp"}
+    assert info == {"type": "undertaker_info", "role_seen": "imp", "player_id": "x"}
+
+
+def test_undertaker_ignores_execution_from_previous_round() -> None:
+    role = get_role_class("undertaker")()
+    state = GameState(
+        phase=GamePhase.NIGHT,
+        round_number=2,
+        players=(
+            make_player("u", "Under", "undertaker", Team.GOOD),
+            make_player("x", "Executed", "imp", Team.EVIL),
+        ),
+        event_log=(
+            GameEvent(
+                event_type="execution_resolved",
+                phase=GamePhase.EXECUTION,
+                round_number=1,
+                payload={"executed": "x"},
+                visibility=Visibility.PUBLIC,
+            ),
+        ),
+    )
+
+    info = role.get_night_info(state, state.get_player("u"))
+
+    assert info is None
 
 
 @pytest.mark.parametrize(

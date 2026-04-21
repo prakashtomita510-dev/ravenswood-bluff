@@ -136,6 +136,16 @@ class BaseRole(ABC):
         """是否由说书人裁定并发放信息。"""
         return bool(getattr(cls, "storyteller_info_role", False))
 
+    def get_required_targets(self, game_state: GameState, phase: GamePhase) -> int:
+        """返回该阶段行动所需的目标数量。"""
+        if self.needs_night_target():
+            return 1
+        return 0
+
+    def can_target_self(self) -> bool:
+        """角色是否可以对自己发动技能（通常默认不可以）。"""
+        return False
+
     def build_storyteller_info(
         self,
         game_state: GameState,
@@ -164,3 +174,16 @@ class BaseRole(ABC):
     @classmethod
     def role_id(cls) -> str:
         return cls._role_id
+
+    def registers_as_team(self, game_state: GameState, actor: PlayerState) -> Team:
+        """
+        探测时表现出的阵营。默认返回其实际阵营。
+        隐士/间谍可重写此方法以实现“可能被当作...”。
+        """
+        return actor.current_team or self.get_definition().team
+
+    def registers_as_role_type(self, game_state: GameState, actor: PlayerState) -> RoleType:
+        """
+        探测时表现出的角色类型（如是否为恶魔）。
+        """
+        return self.get_definition().role_type

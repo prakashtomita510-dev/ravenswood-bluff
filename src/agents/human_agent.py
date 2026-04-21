@@ -13,7 +13,7 @@ import logging
 from typing import Any, Callable
 
 from src.agents.base_agent import BaseAgent
-from src.state.game_state import GameEvent, GameState, PlayerState
+from src.state.game_state import AgentActionLegalContext, AgentVisibleState, GameEvent, PlayerState
 
 logger = logging.getLogger(__name__)
 
@@ -39,22 +39,39 @@ class HumanAgent(BaseAgent):
         # 等待前端消息的队列。为了避免串联多个动作，每次 act() 会消耗一个指令
         self.pending_actions: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-    async def observe_event(self, event: GameEvent, game_state: GameState) -> None:
+    async def observe_event(self, event: GameEvent, visible_state: AgentVisibleState) -> None:
         """事件通知。转发给前端"""
         obs_msg = {
             "type": "event_update",
             "event": event.model_dump(mode="json"),
-            "round": game_state.round_number,
-            "phase": game_state.phase.value
+            "round": visible_state.round_number,
+            "phase": visible_state.phase.value
         }
         await self._send_to_client(obs_msg)
 
-    async def act(self, game_state: GameState, action_type: str, **kwargs: Any) -> dict[str, Any]:
+    async def act(
+        self,
+        visible_state: AgentVisibleState,
+        action_type: str,
+        legal_context: AgentActionLegalContext | None = None,
+        **kwargs,
+    ) -> dict[str, Any]:
         """向客户端请求行动并阻塞等待反馈"""
+        reminder = kwargs.get("reminder")
+        retry_count = kwargs.get("retry_count")
+        last_error = kwargs.get("last_error")
         req_msg = {
             "type": "action_request",
             "action_type": action_type,
-            "context": kwargs
+            "context": {
+                "required_targets": legal_context.required_targets if legal_context else 1,
+                "can_target_self": legal_context.can_target_self if legal_context else False,
+                "reminder": reminder,
+                "retry_count": retry_count,
+                "last_error": last_error,
+                "legal_context": legal_context.model_dump(mode="json") if legal_context else None,
+                "visible_state": visible_state.model_dump(mode="json"),
+            }
         }
         await self._send_to_client(req_msg)
         
@@ -66,7 +83,7 @@ class HumanAgent(BaseAgent):
         
         return action_payload
 
-    async def think(self, prompt: str, game_state: GameState) -> str:
+    async def think(self, prompt: str, visible_state: AgentVisibleState) -> str:
         """人类不需要被强制系统思考，但我们可以弹出一个UI提示"""
         msg = {
             "type": "thought_prompt",

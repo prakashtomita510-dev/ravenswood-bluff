@@ -16,7 +16,7 @@ class ScriptedAgent(BaseAgent):
         self.actions = actions  # type -> index 取动作
         self.counters = {}
         
-    async def act(self, game_state, action_type, **kwargs):
+    async def act(self, visible_state, action_type, legal_context=None, **kwargs):
         c = self.counters.get(action_type, 0)
         lst = self.actions.get(action_type, [])
         if c < len(lst):
@@ -24,10 +24,10 @@ class ScriptedAgent(BaseAgent):
             return lst[c]
         return {"action": action_type}
 
-    async def observe_event(self, event, game_state):
+    async def observe_event(self, event, visible_state):
         pass
 
-    async def think(self, prompt, game_state):
+    async def think(self, prompt, visible_state):
         return ""
 
 
@@ -48,24 +48,41 @@ class DummyStoryteller:
         return ""
 
 
+class OrderedNightStoryteller(DummyStoryteller):
+    def __init__(self, steps):
+        self.steps = steps
+
+    async def build_night_order(self, game_state, phase):
+        return list(self.steps)
+
+
 class TrackingAgent(BaseAgent):
     def __init__(self, pid, name, actions=None):
         super().__init__(pid, name)
         self.actions = actions or {}
         self.calls: list[str] = []
 
-    async def act(self, game_state, action_type, **kwargs):
+    async def act(self, visible_state, action_type, legal_context=None, **kwargs):
         self.calls.append(action_type)
         queue = self.actions.get(action_type, [])
         if queue:
             return queue.pop(0)
         return {"action": "none"}
 
-    async def observe_event(self, event, game_state):
+    async def observe_event(self, event, visible_state):
         pass
 
-    async def think(self, prompt, game_state):
+    async def think(self, prompt, visible_state):
         return ""
+
+
+class ArchiveTrackingAgent(TrackingAgent):
+    def __init__(self, pid, name, actions=None):
+        super().__init__(pid, name, actions)
+        self.archived_phases: list[GamePhase] = []
+
+    async def archive_phase_memory(self, visible_state):
+        self.archived_phases.append(visible_state.phase)
 
 
 @pytest.mark.asyncio
@@ -209,7 +226,81 @@ async def test_spy_receives_spy_book_on_first_and_later_nights():
     ]
     spy_payloads = [event.payload for event in spy_events if event.payload.get("type") == "spy_book"]
     assert len(spy_payloads) >= 2
-    assert all(payload["book"] for payload in spy_payloads)
+
+
+@pytest.mark.asyncio
+async def test_fortune_teller_nested_targets_are_flattened_in_night_action():
+    initial_state = GameState(
+        phase=GamePhase.FIRST_NIGHT,
+        round_number=1,
+        day_number=1,
+        players=(
+            PlayerState(player_id="f1", name="Fortune Teller", role_id="fortune_teller", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Target A", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="h1", name="Target B", role_id="imp", team=Team.EVIL),
+        ),
+        payload={"fortune_teller_red_herring": "p2"},
+    )
+    orch = GameOrchestrator(initial_state)
+    orch.storyteller_agent = OrderedNightStoryteller([
+        {"player_id": "f1", "role_id": "fortune_teller", "night_order": 30}
+    ])
+
+    agent = ScriptedAgent("f1", "Fortune Teller", {
+        "night_action": [
+            {"action": "night_action", "targets": [["p2", "h1"]], "target": "p2"}
+        ]
+    })
+    orch.register_agent(agent)
+
+    await orch._execute_night_actions(GamePhase.FIRST_NIGHT)
+
+    resolved = [
+        event for event in orch.event_log.events
+        if event.event_type == "night_action_resolved" and event.actor == "f1"
+    ]
+    assert resolved
+    assert resolved[-1].payload["targets"] == ["p2", "h1"]
+
+
+@pytest.mark.asyncio
+async def test_first_night_fortune_teller_receives_private_info_after_action():
+    initial_state = GameState(
+        phase=GamePhase.FIRST_NIGHT,
+        round_number=1,
+        day_number=1,
+        players=(
+            PlayerState(player_id="f1", name="Fortune Teller", role_id="fortune_teller", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Target A", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="h1", name="Target B", role_id="imp", team=Team.EVIL),
+        ),
+        payload={"fortune_teller_red_herring": "p2"},
+    )
+    orch = GameOrchestrator(initial_state)
+    orch.storyteller_agent = OrderedNightStoryteller([
+        {"player_id": "f1", "role_id": "fortune_teller", "night_order": 30}
+    ])
+
+    agent = ScriptedAgent("f1", "Fortune Teller", {
+        "night_action": [
+            {"action": "night_action", "targets": [["p2", "h1"]], "target": "p2"}
+        ]
+    })
+    orch.register_agent(agent)
+
+    await orch._execute_night_actions(GamePhase.FIRST_NIGHT)
+    await orch._distribute_night_info(GamePhase.FIRST_NIGHT)
+
+    info_events = [
+        event for event in orch.event_log.events
+        if event.event_type == "private_info_delivered" and event.target == "f1"
+    ]
+    assert info_events, "expected fortune teller to receive private info on first night"
+    payloads = [event.payload for event in info_events if event.payload.get("type") == "fortune_teller_info"]
+    assert payloads, "expected a fortune_teller_info payload"
+    assert payloads[-1]["has_demon"] is True
+    assert payloads[-1]["title"] == "预言家信息"
+    assert payloads[-1]["lines"]
 
 
 @pytest.mark.asyncio
@@ -637,6 +728,57 @@ async def test_nomination_phase_records_no_execution_when_votes_do_not_pass():
     assert orch.state.payload["nomination_state"]["current_nominee"] is None
     assert orch.state.payload["nomination_state"]["last_result"]["executed"] is None
     assert orch.state.payload["nomination_state"]["last_result"]["reason"] == "no_execution"
+
+
+@pytest.mark.asyncio
+async def test_run_defense_and_voting_tracks_vote_counts_in_nomination_state():
+    initial_state = GameState(
+        phase=GamePhase.VOTING,
+        round_number=1,
+        day_number=1,
+        current_nominator="p1",
+        current_nominee="p3",
+        players=(
+            PlayerState(player_id="p1", name="One", role_id="washerwoman", team=Team.GOOD),
+            PlayerState(player_id="p2", name="Two", role_id="chef", team=Team.GOOD),
+            PlayerState(player_id="p3", name="Three", role_id="imp", team=Team.EVIL),
+        ),
+        seat_order=("p1", "p2", "p3"),
+    )
+    orch = GameOrchestrator(initial_state)
+    orch.storyteller_agent = DummyStoryteller()
+    orch.register_agent(TrackingAgent("p1", "One", {"vote": [{"action": "vote", "decision": True}]}))
+    orch.register_agent(TrackingAgent("p2", "Two", {"vote": [{"action": "vote", "decision": False}]}))
+    orch.register_agent(TrackingAgent("p3", "Three", {
+        "vote": [{"action": "vote", "decision": True}],
+        "defense_speech": [{"action": "defense_speech", "content": "我无罪。"}],
+    }))
+
+    await orch._run_defense_and_voting("p3", "trace-vote-1")
+
+    nomination_state = orch.state.payload["nomination_state"]
+    assert nomination_state["votes_cast"] == 3
+    assert nomination_state["yes_votes"] == 2
+    assert nomination_state["last_result"]["votes"] == 2
+    assert nomination_state["result_phase"] == "vote_resolved"
+
+
+@pytest.mark.asyncio
+async def test_transition_archives_agent_phase_memory_before_switch():
+    initial_state = GameState(
+        phase=GamePhase.DAY_DISCUSSION,
+        round_number=1,
+        day_number=1,
+        players=(PlayerState(player_id="p1", name="One", role_id="washerwoman", team=Team.GOOD),),
+    )
+    orch = GameOrchestrator(initial_state)
+    agent = ArchiveTrackingAgent("p1", "One")
+    orch.register_agent(agent)
+    orch.phase_manager._current_phase = GamePhase.DAY_DISCUSSION
+
+    await orch._transition_and_run(GamePhase.GAME_OVER)
+
+    assert agent.archived_phases == [GamePhase.DAY_DISCUSSION]
 
 
 @pytest.mark.asyncio

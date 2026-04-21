@@ -13,7 +13,8 @@ dependencies = [
     "fastapi>=0.100.0",
     "uvicorn[standard]",
     "websockets",
-    "python-dotenv"
+    "python-dotenv",
+    "aiosqlite>=0.19",
 ]
 
 [project.optional-dependencies]

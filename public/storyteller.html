@@ -70,6 +70,23 @@
             justify-content: flex-end;
         }
 
+        .toolbar label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .toolbar input {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 9px 12px;
+            min-width: 96px;
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text);
+        }
+
         button {
             border: 1px solid transparent;
             border-radius: 10px;
@@ -202,6 +219,23 @@
             min-height: 120px;
         }
 
+        .history-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: grid;
+            gap: 10px;
+        }
+
+        .history-entry {
+            cursor: pointer;
+        }
+
+        .history-entry.active {
+            border-color: rgba(242, 169, 0, 0.35);
+            background: rgba(242, 169, 0, 0.08);
+        }
+
         .empty {
             padding: 16px;
             border-radius: 12px;
@@ -225,6 +259,10 @@
             <div class="subtitle">用于观察全局状态、夜晚步骤和魔典视图。页面不再依赖 `/api/game/start` 作为主路径。</div>
         </div>
         <div class="toolbar">
+            <label>
+                说书人 ID
+                <input id="storytellerPlayerId" type="text" value="h1" oninput="persistStorytellerId()" />
+            </label>
             <button class="ghost" onclick="refreshAll()">刷新全局</button>
             <button class="ghost" onclick="loadNightStep()">查看夜晚步骤</button>
             <button class="primary" onclick="pollOnce()">快速轮询</button>
@@ -283,16 +321,56 @@
         <div id="eventsSummary" class="event-list"></div>
     </section>
 
+    <div style="height:16px"></div>
+
+    <div class="two-col">
+        <section class="card">
+            <h2>当前结算 / 封盘结果</h2>
+            <div id="settlementSummary" class="code-box">当前还没有可展示的结算结果。</div>
+        </section>
+
+        <section class="card">
+            <h2>历史对局 / 复盘入口</h2>
+            <ul id="historyList" class="history-list"></ul>
+            <div class="status-line" id="historyStatus">等待加载历史对局...</div>
+        </section>
+    </div>
+
+    <div style="height:16px"></div>
+
+    <section class="card">
+        <h2>历史对局详情</h2>
+        <div id="historyDetail" class="code-box">选择一局历史对局后，会在这里展示复盘详情。</div>
+    </section>
+
     <script>
         const API_BASE = (location.origin && location.origin !== "null") ? location.origin : "http://localhost:8000";
+        const STORYTELLER_ID_STORAGE_KEY = "botc.storytellerConsole.playerId";
         const stateCache = {
             state: null,
             metrics: null,
             grimoire: null,
+            settlement: null,
+            history: [],
+            historyDetail: null,
         };
 
         function apiUrl(path) {
             return `${API_BASE}${path}`;
+        }
+
+        function getStorytellerPlayerId() {
+            const input = document.getElementById("storytellerPlayerId");
+            return (input?.value || localStorage.getItem(STORYTELLER_ID_STORAGE_KEY) || "h1").trim() || "h1";
+        }
+
+        function persistStorytellerId() {
+            localStorage.setItem(STORYTELLER_ID_STORAGE_KEY, getStorytellerPlayerId());
+        }
+
+        function appendPlayerId(path) {
+            const separator = path.includes("?") ? "&" : "?";
+            return `${path}${separator}player_id=${encodeURIComponent(getStorytellerPlayerId())}`;
         }
 
         async function fetchJson(path, options = {}) {
@@ -439,13 +517,112 @@
             `).join("");
         }
 
+        function renderSettlement(settlement) {
+            const box = document.getElementById("settlementSummary");
+            if (!settlement || settlement.status === "error") {
+                box.innerText = settlement?.message || "当前还没有可展示的结算结果。";
+                return;
+            }
+            const lines = [
+                `game_id: ${settlement.game_id ?? "-"}`,
+                `winning_team: ${settlement.winning_team ?? "-"}`,
+                `victory_reason: ${settlement.victory_reason ?? "-"}`,
+                `duration_rounds: ${settlement.duration_rounds ?? "-"}`,
+                `days_played: ${settlement.days_played ?? "-"}`,
+                `timeline_items: ${Array.isArray(settlement.timeline) ? settlement.timeline.length : 0}`,
+            ];
+            box.innerText = lines.join("\n");
+        }
+
+        function renderHistoryList(history) {
+            const list = document.getElementById("historyList");
+            const status = document.getElementById("historyStatus");
+            if (!Array.isArray(history) || history.length === 0) {
+                list.innerHTML = `<li class="empty">暂无历史对局。</li>`;
+                status.innerText = "还没有可复盘的历史记录。";
+                return;
+            }
+            status.innerText = `已载入 ${history.length} 条历史对局。`;
+            list.innerHTML = history.map((game, index) => `
+                <li class="row history-entry ${stateCache.historyDetail?.game_id === game.game_id ? "active" : ""}" onclick="loadHistoryDetail('${game.game_id}')">
+                    <div>
+                        <strong>${index + 1}. ${game.game_id}</strong>
+                        <div><small>winner=${game.winning_team ?? "-"} · rounds=${game.round_count ?? "-"} · players=${game.player_count ?? "-"}</small></div>
+                    </div>
+                    <span class="badge info">history</span>
+                </li>
+            `).join("");
+        }
+
+        function renderHistoryDetail(record) {
+            const box = document.getElementById("historyDetail");
+            if (!record || record.status === "error") {
+                box.innerText = record?.message || "选择一局历史对局后，会在这里展示复盘详情。";
+                return;
+            }
+            const settlement = record.settlement || {};
+            const players = Array.isArray(record.players) ? record.players : [];
+            const timeline = Array.isArray(settlement.timeline) ? settlement.timeline : [];
+            const lines = [
+                `game_id: ${record.game_id ?? "-"}`,
+                `winning_team: ${record.winning_team ?? settlement.winning_team ?? "-"}`,
+                `victory_reason: ${record.victory_reason ?? settlement.victory_reason ?? "-"}`,
+                `started_at: ${record.started_at ?? "-"}`,
+                `ended_at: ${record.ended_at ?? "-"}`,
+                `players: ${players.length}`,
+                `timeline_items: ${timeline.length}`,
+                "",
+                "players:",
+                ...players.map((p) => `- ${p.player_name ?? p.name ?? p.player_id}: ${p.true_role_id ?? p.role_id} (${p.team})`),
+            ];
+            box.innerText = lines.join("\n");
+        }
+
+        async function loadSettlement() {
+            try {
+                const data = await fetchJson("/api/game/settlement");
+                stateCache.settlement = data;
+                renderSettlement(data);
+            } catch (error) {
+                renderSettlement({ status: "error", message: `结算拉取失败：${error.message}` });
+            }
+        }
+
+        async function loadHistory() {
+            try {
+                const data = await fetchJson("/api/game/history?limit=20");
+                stateCache.history = Array.isArray(data.games) ? data.games : [];
+                renderHistoryList(stateCache.history);
+                if (stateCache.history.length && !stateCache.historyDetail) {
+                    await loadHistoryDetail(stateCache.history[0].game_id);
+                }
+            } catch (error) {
+                renderHistoryList([]);
+                document.getElementById("historyStatus").innerText = `历史加载失败：${error.message}`;
+            }
+        }
+
+        async function loadHistoryDetail(gameId) {
+            try {
+                const data = await fetchJson(`/api/game/history/${gameId}`);
+                stateCache.historyDetail = data;
+                renderHistoryDetail(data);
+                renderHistoryList(stateCache.history);
+            } catch (error) {
+                renderHistoryDetail({ status: "error", message: `历史详情加载失败：${error.message}` });
+            }
+        }
+
         async function refreshAll() {
             document.getElementById("stateStatus").innerText = "正在刷新...";
             try {
+                persistStorytellerId();
                 const [state, metrics, grimoire] = await Promise.all([
-                    fetchJson("/api/game/state"),
+                    fetchJson(appendPlayerId("/api/game/state")),
                     fetchJson("/api/game/metrics").catch(() => null),
-                    fetchJson("/api/game/grimoire?view=full").catch(() => null),
+                    fetchJson(appendPlayerId("/api/game/grimoire?view=full")).catch(async (error) => {
+                        return { status: "error", message: `魔典加载失败：${error.message}` };
+                    }),
                 ]);
 
                 stateCache.state = state;
@@ -456,6 +633,12 @@
                 renderMetricSummary(metrics);
                 renderGrimoire(grimoire);
                 renderEventsSummary(state, metrics, grimoire);
+                if (String(state?.phase || "").toLowerCase() === "game_over") {
+                    await loadSettlement();
+                } else {
+                    renderSettlement({ status: "error", message: "当前对局尚未结束。" });
+                }
+                await loadHistory();
                 document.getElementById("backendBadge").innerText = "LIVE";
             } catch (error) {
                 document.getElementById("stateStatus").innerText = `刷新失败：${error.message}`;
@@ -479,6 +662,11 @@
             await loadNightStep();
         }
 
+        (function initializeStorytellerIdInput() {
+            const input = document.getElementById("storytellerPlayerId");
+            if (!input) return;
+            input.value = localStorage.getItem(STORYTELLER_ID_STORAGE_KEY) || "h1";
+        })();
         refreshAll();
         setInterval(refreshAll, 5000);
     </script>

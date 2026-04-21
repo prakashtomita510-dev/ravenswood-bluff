@@ -50,7 +50,7 @@ Wave 3 聚焦五类问题：
 
 - 尽管前后端已存在一定数据过滤，但在 Prompt 或 Context 中仍有可能无意中把说书人级别的判断透给 AI（如：知道自己其实是酒鬼）。
 
-### 具体任务
+### 具体任务 [DONE]
 
 1. 检查和清理 AI Agent 内部的所有信息通道，彻底移除 `true_role_id` 直接下发到 LLM 并替换为 `perceived_role_id`
 2. 筛除不在 `player_knowledge_inbox` 中的私密信息
@@ -58,8 +58,10 @@ Wave 3 聚焦五类问题：
 
 ### 验收
 
-- `scripts/player_knowledge_acceptance.py` 测试通过
-- 截获送给 LLM 的 prompt 中不再包含诸如 `你实际上是中毒的` 等上帝视角描述
+- [x] `scripts/player_knowledge_acceptance.py` 已可作为正式自动化门禁运行
+- [x] `AIAgent` 主决策链已收口到 `AgentVisibleState + AgentActionLegalContext`
+- [x] `BaseAgent.act()` / `observe_event()` 的接口级输入已从 `GameState` 切走
+- [ ] 仍建议补一条更强的 prompt 截获/断言脚本，作为增强项防止后续回退
 
 ---
 
@@ -76,7 +78,7 @@ Wave 3 聚焦五类问题：
 - Agent 经常默认寻找一个最先顺位的合法目标进行提名。
 - 极少根据大盘局势去自主选择“保留态度”或不投票。
 
-### 具体任务
+### 具体任务 [DONE]
 
 1. 允许并训练 Agent 在怀疑度与证据不足够高时进行明确的 `none` 提名操作。
 2. 为投票环节增加针对群体反应及当前已产生的候选人票数的感知系统。
@@ -84,9 +86,17 @@ Wave 3 聚焦五类问题：
 
 ### 验收
 
-- 全自动一局的日志当中：不再出现 10 次开局全指向同一目标的人头枚举规律。
-- `ai_none_nomination_rate` 处于合理值。
-- AI 有能力根据人格放弃投票而不再死板跟票。
+- [x] 已补 `scripts/long_game_ai_acceptance.py`，覆盖跨日提名 / 投票 / 记忆 / 社交图谱长局门禁。
+- [x] 已接入 `scripts/ai_evaluation.py` 的轻量门禁，覆盖 `ai_none_nomination_rate` 与强信号提名率。
+- [x] 已补趋势观察，不再只看单次 `ai_none_nomination_rate`，当前已覆盖多局多轮压力档位。
+- [x] 已补“机械顺位提名偏置”门禁，覆盖：
+  - `front_position_nomination_bias_rate`
+  - `ambiguous_nomination_diversity_score`
+- [x] 已补人格化投票画像门槛，覆盖：
+  - `aggressive_vote_push_rate`
+  - `silent_vote_restraint_rate`
+  - `cooperative_follow_rate`
+- [x] 已补更完整的长局级行为画像回归，确认不同人格在跨日对局里保持稳定分歧与非机械化策略。
 
 ---
 
@@ -102,7 +112,7 @@ Wave 3 聚焦五类问题：
 - 已存在如 `voice_anchor` 和 `assertiveness` 等基础维度设定。
 - 实际发言和倾向仍然高度趋同，多名 AI 发出的思考非常同步。
 
-### 具体任务
+### 具体任务 [DONE]
 
 1. 制定 5~6 种基础玩家人格模板与其初始设定偏重矩阵。
 2. 提供一套覆盖角色特殊视角的融合 Prompt 架构。
@@ -110,8 +120,11 @@ Wave 3 聚焦五类问题：
 
 ### 验收
 
-- 同一环境下，导入不同人格的两个角色，做出的决策走向会有明确且符合模板预期的分歧。
-- 说书人魔典中可以清晰看到 AI 人格带来的对局多样性。
+- [x] 已补更大样本的人格分歧回归，当前由 `scripts/long_game_ai_acceptance.py` 覆盖长局稳定性与人格分歧。
+- [x] 已落地 `persona_diversity_score` 轻量门禁。
+- [x] 已补对局级人格多样性观察门禁，覆盖：
+  - `long_game_persona_diversity_score`
+  - `long_game_stability_score`
 
 ---
 
@@ -128,17 +141,21 @@ Wave 3 聚焦五类问题：
 - `WorkingMemory` 已有，但更像是个堆栈。
 - 没有成体系的关键事件和“情节推演”抽象机制。
 
-### 具体任务
+### 具体任务 [DONE]
 
 1. 设计“阶段总结”抽象：比如每次晚上降临时，自动对全体白天发生的最重大争吵与暴露信息进行短文本蒸馏提取。
 2. 为 Agent 提供动态修改与更新对场上别人“信任/敌视”图谱的基础算子。
-3. 基于他人多次出现的言论矛盾扣除信用分，并在发言时直接引用（“你昨天明明说是占卜，今天怎么跳厨师？”）
+3. 基于他人多次出现的言论矛盾扣除信用分，并在发言时直接引用。
 
 ### 验收
 
-- 自动记录中的摘要能准确体现昨天发生的事情。
-- 能观测到基于多次推敲后倒向某一目标的图谱转移轨迹。
-- 会话隔离安全，绝不跨局留存历史记忆。
+- [x] 已落地 `scripts/long_loop_memory_acceptance.py`，覆盖跨阶段情节记忆与社交图谱累积。
+- [x] 已补 `tests/test_orchestrator/test_long_loop_memory_acceptance.py`，校验 episode 递增、跨日摘要、trust 累积和工作记忆清理。
+- [x] 已补更完整的跨日 / 跨局趋势回归，当前由 `scripts/long_game_ai_acceptance.py` 校验跨日摘要保留与社交轨迹一致性。
+- [x] 已补图谱转移轨迹断言门禁，覆盖：
+  - `long_game_social_consistency_rate`
+  - `bob/eve vs cathy` 的跨日 trust 关系
+- [x] 会话隔离与跨局稳定性已纳入长局脚本的多局重复验收。
 
 ---
 
@@ -154,14 +171,28 @@ Wave 3 聚焦五类问题：
 
 - 前两波 Wave 已构建设基础设施和断言，但主要集中规则合乎性校验，没有 AI 拟人化/智能化质量判定机制。
 
-### 具体任务
+### 具体任务 [DONE]
 
 1. 增加 AI Agent 指向目标的多维评价得分打分器 (`ai_evaluation.py`)。
 2. 针对 W3 增加自动回归入口：用模拟场景强制检查它的判定机制。
 
 ### 验收
 
-- 门禁脚本完整，任何劣化其推理质量的代码改变均会被门禁阻止。
+- [x] 已落地 `scripts/wave3_acceptance.py` 与 `scripts/ai_eval_acceptance.py`
+- [x] 已落地 `scripts/long_game_ai_acceptance.py`，并接入 `wave3_acceptance.py`
+- [x] 已落地 `scripts/ai_evaluation.py`，覆盖多局多轮趋势指标：
+  - `ai_none_nomination_rate`
+  - `ai_strong_nomination_rate`
+  - `nomination_trend_monotonicity_rate`
+  - `vote_trend_monotonicity_rate`
+  - `persona_diversity_score`
+  - `multi_game_stability_score`
+  - `front_position_nomination_bias_rate`
+  - `ambiguous_nomination_diversity_score`
+  - `aggressive_vote_push_rate`
+  - `silent_vote_restraint_rate`
+  - `cooperative_follow_rate`
+- [x] 已补更长局、更大样本的趋势门禁，Wave 3 现同时具备短局趋势门禁与长局行为门禁。
 
 ---
 
@@ -169,11 +200,10 @@ Wave 3 聚焦五类问题：
 
 本规划基于极强的前后依赖，优先推荐下列步骤：
 
-1. **`W3-A` 玩家视角隔离：** 无需怀疑，重铸真相源是先决条件，不然做出的智能也是建构在沙塔上。
-2. **`W3-B` 提名与投票去机械化：** 最容易出成效，迅速改善真人体感的顽疾痛点。
-3. **`W3-C` 多层人格系统：** 给 Agent 提供行为背后的逻辑支架。
-4. **`W3-D` 社交图谱对接：** 使这种多变的框架能够获得多日的推理持久力支撑。
-5. **`W3-E` 评估体系：** 将阶段性的测试成果量化并建立版本拦截器。
+1. **`W3-B` 提名与投票去机械化：** 最容易继续出成效，迅速改善真人体感的顽疾痛点。
+2. **`W3-C` 多层人格系统：** 给 Agent 提供行为背后的逻辑支架。
+3. **`W3-D` 社交图谱对接：** 使这种多变的框架能够获得多日的推理持久力支撑。
+4. **`W3-E` 评估体系：** 将阶段性的测试成果量化并建立版本拦截器。
 
 ---
 
@@ -184,5 +214,17 @@ Wave 3 视为完成，需要同时满足：
 1. 不再发生由于 AI 直接读懂 `true_role_id` (酒鬼身份、间谍身份等) 导致的超维操作及隐患。
 2. 发言和提名具备强烈的真人对战临场感（弃票和策略性挂机合理呈现）。
 3. 人格化和长期追凶能力（哪怕出错也是基于其预设立场而合规出错）肉眼可见且数据验证一致。
-4. 新增的 `wave3_acceptance.py` / `ai_eval_acceptance.py` 脚本全部通过。
+4. 新增的 `wave3_acceptance.py` / `ai_eval_acceptance.py` / `long_game_ai_acceptance.py` 脚本全部通过，并补上更细的指标级门禁。
 5. 可以宣告项目准备好进入 Wave 4（前端封版打磨）流程。
+
+---
+
+## 当前结论
+
+Wave 3 当前已完成。
+
+剩余工作若继续推进，属于增强项而非阻塞项，例如：
+
+- 更长的真人前端整局 playtest
+- 更细的 persona 漂移可视化
+- 更复杂的长局统计面板

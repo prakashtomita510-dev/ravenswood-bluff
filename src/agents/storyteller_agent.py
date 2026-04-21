@@ -643,6 +643,39 @@ class StorytellerAgent:
                 ids.append(role_id)
         return ids
 
+    def _classify_info_scope(self, role_id: str, source: str, suppressed: bool) -> str:
+        if suppressed: return "suppressed"
+        if source == "payload": return "preset"
+        return "dynamic"
+
+    def _resolve_adjudication_path(self, role_id: str, source: str) -> str:
+        if source == "payload": return "storage_lookup"
+        return "calculation"
+
+    def _adjudicate_raw_info(self, game_state: GameState, player_id: str, role_id: str) -> tuple[dict, str, str]:
+        """为角色裁定原始信息（在打乱/干扰之前）。"""
+        player = game_state.get_player(player_id)
+        if not player: return {}, "none", "fixed"
+
+        # 1. 优先查 payload (预定义的设置，如洗衣妇)
+        key = f"initial_info:{role_id}:{player_id}"
+        if key in game_state.payload:
+            return game_state.payload[key], "payload", "fixed"
+        
+        # 预言家特殊逻辑：如果当晚有 targets
+        if role_id == "fortune_teller":
+            # 查找当晚行动
+            pass # build_storyteller_info 会处理
+
+        # 2. 调用角色的 build_storyteller_info 动态计算
+        from src.engine.roles.base_role import get_role_class
+        role_cls = get_role_class(role_id)
+        if role_cls:
+            role_instance = role_cls()
+            return role_instance.build_storyteller_info(game_state, player) or {}, "calculation", "standard"
+        
+        return {}, "none", "fixed"
+
     async def narrate_phase(self, game_state: GameState) -> str:
         phase_names = {
             GamePhase.SETUP: "小镇尚未苏醒，命运正在分配身份。",
@@ -667,6 +700,73 @@ class StorytellerAgent:
             narration=narration,
         )
         return narration
+
+    async def decide_initial_setup_info(self, game_state: GameState) -> GameState:
+        """为所有需要的角色预先决定初始信息（如：洗衣妇看到的两个玩家和角色，厨师得到的邻座数等）。"""
+        new_payload = dict(game_state.payload)
+        
+        # 1. 预报身份类角色
+        for player in game_state.players:
+            role_id = player.true_role_id or player.role_id
+            if role_id in {"washerwoman", "librarian", "investigator", "chef"}:
+                from src.engine.roles.base_role import get_role_class
+                role_cls = get_role_class(role_id)
+                if role_cls:
+                    role_instance = role_cls()
+                    # 厨师特别逻辑：如果已经中毒/醉酒（虽然SETUP一般不会），build_info 会记录日志
+                    info = role_instance.build_storyteller_info(game_state, player)
+                    if info:
+                        key = f"initial_info:{role_id}:{player.player_id}"
+                        new_payload[key] = info
+                        storyteller_logger.info(f"[decide_initial_setup_info] player={player.player_id} role={role_id} info={info}")
+                        self.record_judgement("initial_setup_info", decision="preset", player_id=player.player_id, role_id=role_id, info=info)
+        
+        # 2. 预言家宿敌 (Red Herring)
+        ft_player = next((p for p in game_state.players if (p.true_role_id or p.role_id) == "fortune_teller"), None)
+        if ft_player and "fortune_teller_red_herring" not in new_payload:
+            # 选择一个非恶魔的好人作为宿敌
+            candidates = [p for p in game_state.players if p.team == Team.GOOD and (p.true_role_id or p.role_id) != "fortune_teller"]
+            if candidates:
+                red_herring = random.choice(candidates)
+                new_payload["fortune_teller_red_herring"] = red_herring.player_id
+                storyteller_logger.info(f"[decide_initial_setup_info] fortune_teller_red_herring set to {red_herring.player_id}")
+                self.record_judgement("initial_setup_info", decision="set_red_herring", target=red_herring.player_id)
+
+        return game_state.with_update(payload=new_payload)
+
+    async def decide_misregistration(self, game_state: GameState) -> GameState:
+        """为间谍和隐士做出误报决策。"""
+        new_payload = dict(game_state.payload)
+        
+        for player in game_state.players:
+            role_id = player.true_role_id or player.role_id
+            if role_id == "recluse":
+                # 隐士：随机决定是否登记为邪恶或小怪/恶魔
+                # 策略：50% 概率保持原样，50% 概率误报
+                if random.random() < 0.5:
+                    team = random.choice([Team.GOOD, Team.EVIL])
+                    role_type = random.choice([RoleType.OUTSIDER, RoleType.MINION, RoleType.DEMON])
+                    new_payload[f"misregistration:team:{player.player_id}"] = team.value
+                    new_payload[f"misregistration:type:{player.player_id}"] = role_type.value
+                    self.record_judgement("misregistration", decision="active", player_id=player.player_id, role_id="recluse", team=team.value, type=role_type.value)
+                else:
+                    # 显式清除前夜残留（如果存在）
+                    new_payload.pop(f"misregistration:team:{player.player_id}", None)
+                    new_payload.pop(f"misregistration:type:{player.player_id}", None)
+            
+            elif role_id == "spy":
+                # 间谍：类似隐士
+                if random.random() < 0.5:
+                    team = Team.GOOD
+                    role_type = RoleType.TOWNSFOLK
+                    new_payload[f"misregistration:team:{player.player_id}"] = team.value
+                    new_payload[f"misregistration:type:{player.player_id}"] = role_type.value
+                    self.record_judgement("misregistration", decision="active", player_id=player.player_id, role_id="spy", team=team.value, type=role_type.value)
+                else:
+                    new_payload.pop(f"misregistration:team:{player.player_id}", None)
+                    new_payload.pop(f"misregistration:type:{player.player_id}", None)
+                    
+        return game_state.with_update(payload=new_payload)
 
     async def get_human_storyteller_step(self, game_state: GameState, phase: GamePhase) -> dict:
         order = await self.build_night_order(game_state, phase)

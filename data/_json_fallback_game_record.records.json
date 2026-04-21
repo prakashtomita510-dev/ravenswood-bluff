@@ -1,0 +1,83 @@
+{
+  "games": {
+    "fallback-game": {
+      "game_id": "fallback-game",
+      "started_at": "2026-04-20T17:07:55.387212",
+      "ended_at": "2026-04-20T17:07:55.387212",
+      "winning_team": "good",
+      "victory_reason": "demon_executed",
+      "player_count": 2,
+      "round_count": 3,
+      "script_id": "trouble_brewing",
+      "settlement": {
+        "game_id": "fallback-game",
+        "winning_team": "good",
+        "victory_reason": "demon_executed",
+        "duration_rounds": 3,
+        "days_played": 2,
+        "players": [
+          {
+            "player_id": "p1",
+            "name": "Alice",
+            "true_role_id": "washerwoman",
+            "perceived_role_id": "washerwoman",
+            "team": "good",
+            "is_alive": true,
+            "stats": {
+              "nominations_made": 1,
+              "times_nominated": 0,
+              "votes_cast": 2,
+              "votes_yes": 2
+            }
+          },
+          {
+            "player_id": "p2",
+            "name": "Bob",
+            "true_role_id": "imp",
+            "perceived_role_id": "chef",
+            "team": "evil",
+            "is_alive": false,
+            "stats": {
+              "nominations_made": 0,
+              "times_nominated": 1,
+              "votes_cast": 1,
+              "votes_yes": 0
+            }
+          }
+        ],
+        "timeline": [],
+        "statistics": {
+          "total_nominations": 1,
+          "total_executions": 1,
+          "total_votes": 3,
+          "total_deaths": 1,
+          "days_played": 2,
+          "player_count": 2
+        }
+      },
+      "config": {},
+      "players": [
+        {
+          "game_id": "fallback-game",
+          "player_id": "p1",
+          "player_name": "Alice",
+          "true_role_id": "washerwoman",
+          "perceived_role_id": "washerwoman",
+          "team": "good",
+          "is_alive": 1,
+          "is_human": 0
+        },
+        {
+          "game_id": "fallback-game",
+          "player_id": "p2",
+          "player_name": "Bob",
+          "true_role_id": "imp",
+          "perceived_role_id": "chef",
+          "team": "evil",
+          "is_alive": 0,
+          "is_human": 0
+        }
+      ]
+    }
+  }
+}

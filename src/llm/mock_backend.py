@@ -23,6 +23,13 @@ class MockBackend(LLMBackend):
     根据 action_type 返回预定义的或随机的行为。
     """
 
+    def __init__(self) -> None:
+        self._response_queue: list[str] = []
+
+    def set_response(self, content: str) -> None:
+        """预设下一次 generate 的返回内容"""
+        self._response_queue.append(content)
+
     def _extract_player_ids(self, text: str) -> list[str]:
         matches = re.findall(r"\b([aph]\d+)\b", text.lower())
         seen: list[str] = []
@@ -43,6 +50,16 @@ class MockBackend(LLMBackend):
         temperature: float = 0.7,
         max_tokens: int = 1024,
     ) -> LLMResponse:
+        
+        # W3-C: 优先使用预设回复
+        if self._response_queue:
+            content = self._response_queue.pop(0)
+            return LLMResponse(
+                content=content,
+                tool_calls=[],
+                model="mock-model",
+                usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            )
         
         # 默认响应框架
         decision = {

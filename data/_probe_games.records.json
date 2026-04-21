@@ -1,0 +1,28 @@
+{
+  "games": {
+    "probe-game": {
+      "game_id": "probe-game",
+      "started_at": "2026-04-20T17:08:03.854762",
+      "ended_at": "2026-04-20T17:08:03.854762",
+      "winning_team": "good",
+      "victory_reason": "test",
+      "player_count": 0,
+      "round_count": 1,
+      "script_id": "trouble_brewing",
+      "settlement": {
+        "game_id": "probe-game",
+        "winning_team": "good",
+        "victory_reason": "test",
+        "duration_rounds": 1,
+        "days_played": 1,
+        "players": [],
+        "timeline": [],
+        "statistics": {
+          "player_count": 0
+        }
+      },
+      "config": {},
+      "players": []
+    }
+  }
+}

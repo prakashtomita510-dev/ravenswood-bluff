@@ -443,6 +443,51 @@ def test_butler_vote_is_intercepted_if_target_does_not_vote() -> None:
     new_state, events = NominationManager.resolve_voting_round(state)
     assert new_state.execution_candidates[0].votes == 0
 
+
+def test_butler_binding_event_payload_matches_active_day_number() -> None:
+    from src.engine.roles.outsiders import ButlerRole
+
+    role = get_role_class("butler")()
+    state = GameState(
+        phase=GamePhase.NIGHT,
+        round_number=2,
+        day_number=1,
+        players=(
+            make_player("b", "Butler", "butler", Team.GOOD),
+            make_player("g", "Good", "washerwoman", Team.GOOD),
+        ),
+    )
+
+    new_state, events = role.execute_ability(state, state.get_player("b"), "g")
+
+    assert events
+    assert events[0].event_type == "butler_binding"
+    assert events[0].payload["target_id"] == "g"
+    assert events[0].payload["applies_on_day"] == 1
+    assert new_state.payload[ButlerRole.binding_payload_key()]["b"]["applies_on_day"] == 1
+
+
+def test_fortune_teller_accepts_nested_multi_target_input() -> None:
+    role = get_role_class("fortune_teller")()
+    state = GameState(
+        phase=GamePhase.NIGHT,
+        round_number=1,
+        day_number=1,
+        players=(
+            make_player("f", "Fortune Teller", "fortune_teller", Team.GOOD),
+            make_player("p2", "Player 2", "chef", Team.GOOD),
+            make_player("h1", "Human", "washerwoman", Team.GOOD),
+        ),
+    )
+
+    new_state, events = role.execute_ability(state, state.get_player("f"), target=[["p2", "h1"]])
+
+    assert events
+    assert new_state.event_log[-1].payload["targets"] == ["p2", "h1"]
+    assert events[0].payload["targets"] == ["p2", "h1"]
+    assert events[0].payload["role_id"] == "fortune_teller"
+
+
 def test_slayer_kills_demon_triggers_good_victory() -> None:
     role = get_role_class("slayer")()
     state = GameState(

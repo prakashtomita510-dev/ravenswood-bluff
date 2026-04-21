@@ -15,13 +15,13 @@ class DummyAgent(BaseAgent):
     def synchronize_role(self, state):
         self.team = self._team.value
 
-    async def act(self, game_state, action_type, **kwargs):
+    async def act(self, visible_state, action_type, legal_context=None, **kwargs):
         return {}
 
-    async def observe_event(self, event, game_state):
+    async def observe_event(self, event, visible_state):
         self.observed_events.append(event)
         
-    async def think(self, prompt, game_state):
+    async def think(self, prompt, visible_state):
         pass
 
 

@@ -521,11 +521,16 @@ async def get_game_state(player_id: str = None):
     viewer_mode = resolve_viewer_mode(orchestrator, player_id)
     is_observer = viewer_mode == "observer"
     
+    setup_configured = bool(state.config and state.seat_order and len(state.players) > 1)
+    setup_required = state.phase == GamePhase.SETUP and not setup_configured
+
     data = {
         "game_id": state.game_id,
         "round_number": state.round_number,
         "day_number": state.day_number,
         "phase": state.phase.value,
+        "setup_configured": setup_configured,
+        "setup_required": setup_required,
         "alive_count": state.alive_count,
         "current_nominee": state.current_nominee,
         "current_nominator": state.current_nominator,
@@ -535,9 +540,15 @@ async def get_game_state(player_id: str = None):
         "can_view_grimoire": can_view_grimoire(orchestrator, player_id),
         "nomination_state": build_nomination_state(orchestrator),
         "private_info": build_private_info_list(orchestrator, player_id) if viewer_mode == "player" else [],
+        "active_action_request": None,
         "players": []
     }
     
+    # 如果当前玩家有挂起的行动请求，包含在内
+    if player_id and orchestrator._pending_night_action:
+        if orchestrator._pending_night_action.get("player_id") == player_id:
+            data["active_action_request"] = orchestrator._pending_night_action
+
     # 按照座位顺序返回玩家列表
     ordered_ids = state.seat_order if state.seat_order else [p.player_id for p in state.players]
     player_map = {p.player_id: p for p in state.players}
@@ -609,6 +620,124 @@ async def storyteller_night_resolve(data: Dict[str, Any]):
 @app.post("/api/storyteller/info/confirm")
 async def storyteller_info_confirm(data: Dict[str, Any]):
     return {"status": "ok", "payload": data}
+
+
+# --------------- 结算与历史 ---------------
+
+@app.get("/api/game/settlement")
+async def get_settlement():
+    """获取当前对局的结算报告（仅 GAME_OVER 阶段可用）"""
+    if not global_orchestrator:
+        return {"status": "error", "message": "Orchestrator not initialized"}
+    if global_orchestrator.state.phase != GamePhase.GAME_OVER:
+        return {"status": "error", "message": "Game is not over yet"}
+    report = global_orchestrator.settlement_report
+    if not report:
+        return {"status": "error", "message": "Settlement report not available"}
+    return {"status": "ok", **report}
+
+
+@app.get("/api/game/history")
+async def get_game_history(limit: int = 20, offset: int = 0):
+    """分页获取历史对局列表"""
+    from src.state.game_record import GameRecordStore
+    store = GameRecordStore()
+    try:
+        games = await store.list_games(limit=min(limit, 100), offset=max(offset, 0))
+        return {"status": "ok", "games": games, "count": len(games)}
+    except Exception as e:
+        logger.error(f"Failed to fetch game history: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/game/history/{game_id}")
+async def get_game_history_detail(game_id: str):
+    """获取指定对局的完整结算详情"""
+    from src.state.game_record import GameRecordStore
+    store = GameRecordStore()
+    try:
+        record = await store.get_game(game_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Game not found")
+        return {"status": "ok", **record}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch game record: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/game/history/player/{player_name}")
+async def get_player_game_history(player_name: str):
+    """按玩家名获取参与过的历史对局列表"""
+    from src.state.game_record import GameRecordStore
+    store = GameRecordStore()
+    try:
+        records = await store.get_player_history(player_name)
+        return {"status": "ok", "games": records, "count": len(records), "player_name": player_name}
+    except Exception as e:
+        logger.error(f"Failed to fetch player history for {player_name}: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/game/rematch")
+async def rematch_game():
+    """使用相同配置快速重开新一局"""
+    global global_orchestrator, human_agents
+
+    if not global_orchestrator:
+        return {"status": "error", "message": "Orchestrator not initialized"}
+
+    # 保留旧配置
+    old_config = global_orchestrator.state.config
+    player_count = old_config.player_count if old_config else 5
+    human_mode = old_config.human_mode if old_config else "none"
+    human_client_id = old_config.human_client_id if old_config else None
+    storyteller_client_id = old_config.storyteller_client_id if old_config else None
+    host_id = human_client_id or "h1"
+
+    logger.info("Rematch requested: player_count=%d human_mode=%s", player_count, human_mode)
+
+    # 停止旧循环
+    await stop_game_loop_task()
+
+    # 重建 orchestrator
+    global_orchestrator = build_fresh_orchestrator()
+
+    # 使用旧配置重新 setup
+    try:
+        await global_orchestrator.run_setup_with_options(
+            player_count=player_count,
+            host_id=host_id,
+            human_mode=human_mode,
+            human_client_id=human_client_id,
+            storyteller_client_id=storyteller_client_id,
+            backend_mode=os.getenv("BOTC_BACKEND", "auto"),
+        )
+    except Exception as e:
+        logger.error(f"Rematch setup failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+    # 重连已有的 human_agents
+    for pid, agent in human_agents.items():
+        if pid not in global_orchestrator.broker.agents:
+            global_orchestrator.register_agent(agent)
+
+    # 启动新循环
+    ensure_game_loop_running()
+
+    new_game_id = global_orchestrator.state.game_id
+
+    # 广播 rematch 事件给所有连接的客户端
+    rematch_msg = json.dumps({"type": "game_rematch", "new_game_id": new_game_id}, ensure_ascii=False)
+    for pid in list(manager.active_connections.keys()):
+        try:
+            await manager.send_personal_message(rematch_msg, pid)
+        except Exception:
+            pass
+
+    return {"status": "ok", "new_game_id": new_game_id, "player_count": player_count}
+
 
 if __name__ == "__main__":
     import uvicorn

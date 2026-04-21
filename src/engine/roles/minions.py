@@ -4,9 +4,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from src.engine.roles.base_role import BaseRole, register_role
+
+
+logger = logging.getLogger(__name__)
 from src.state.game_state import (
     Ability,
     AbilityTrigger,
@@ -107,21 +111,26 @@ class SpyRole(BaseRole):
     def execute_ability(self, game_state, actor, target=None, **kwargs):
         return game_state, []
 
-    def build_storyteller_info(self, game_state, actor):
-        # 间谍能看到全场信息
-        book = []
+    def registers_as_team(self, game_state: GameState, actor: PlayerState) -> Team:
+        key = f"misregistration:team:{actor.player_id}"
+        if key in game_state.payload:
+            return Team(game_state.payload[key])
+        return super().registers_as_team(game_state, actor)
+
+    def build_storyteller_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
+        """间谍每晚查看魔法书：所有玩家的角色和阵营"""
+        grimoire = []
         for p in game_state.players:
-            book.append(
-                {
-                    "player_id": p.player_id,
-                    "name": p.name,
-                    "role_id": p.true_role_id or p.role_id,
-                    "perceived_role_id": p.perceived_role_id,
-                    "team": (p.current_team or p.team).value,
-                    "is_alive": p.is_alive,
-                }
-            )
-        return {"type": "spy_book", "book": book}
+            grimoire.append({
+                "player_id": p.player_id,
+                "role_id": p.true_role_id or p.role_id,
+                "team": p.current_team.value if p.current_team else p.team.value,
+                "is_alive": p.is_alive
+            })
+        return {
+            "type": "spy_grimoire",
+            "grimoire": grimoire
+        }
 
     def get_night_info(self, game_state, actor):
         return self.build_storyteller_info(game_state, actor)

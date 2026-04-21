@@ -39,7 +39,7 @@ class ButlerRole(BaseRole):
         bindings = dict(game_state.payload.get(cls.binding_payload_key(), {}))
         bindings[butler_id] = {
             "target_id": target_id,
-            "applies_on_day": game_state.day_number + 1,
+            "applies_on_day": game_state.day_number,
         }
         payload = dict(game_state.payload)
         payload[cls.binding_payload_key()] = bindings
@@ -87,7 +87,7 @@ class ButlerRole(BaseRole):
             visibility=Visibility.STORYTELLER_ONLY,
             payload={
                 "target_id": target,
-                "applies_on_day": game_state.day_number + 1,
+                "applies_on_day": game_state.day_number,
             },
         )
         return new_state.with_event(event), [event]
@@ -147,17 +147,18 @@ class RecluseRole(BaseRole):
             ),
         )
 
-    @classmethod
-    def can_be_misread_as_evil(cls) -> bool:
-        return True
+    def registers_as_team(self, game_state: GameState, actor: PlayerState) -> Team:
+        # 允许说书人调整其表现出的阵营
+        key = f"misregistration:team:{actor.player_id}"
+        if key in game_state.payload:
+            return Team(game_state.payload[key])
+        return super().registers_as_team(game_state, actor)
 
-    @classmethod
-    def registers_as_evil_for_detection(cls) -> bool:
-        return True
-
-    @classmethod
-    def misread_as_role_types(cls) -> tuple[str, ...]:
-        return ("evil", "minion", "demon")
+    def registers_as_role_type(self, game_state: GameState, actor: PlayerState) -> RoleType:
+        key = f"misregistration:type:{actor.player_id}"
+        if key in game_state.payload:
+            return RoleType(game_state.payload[key])
+        return super().registers_as_role_type(game_state, actor)
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
         return game_state, []

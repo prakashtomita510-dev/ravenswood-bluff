@@ -373,8 +373,288 @@
             min-height: 0;
             overflow-y: auto;
         }
+
+        /* Settlement Overlay */
+        .settlement-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.92);
+            backdrop-filter: blur(12px);
+            display: none;
+            justify-content: center;
+            align-items: flex-start;
+            z-index: 2000;
+            overflow-y: auto;
+            padding: 40px 20px;
+        }
+        .settlement-overlay.active { display: flex; }
+        .settlement-modal {
+            background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            border: 1px solid rgba(187, 134, 252, 0.3);
+            border-radius: 24px;
+            padding: 40px;
+            width: 90%;
+            max-width: 900px;
+            box-shadow: 0 0 60px rgba(187, 134, 252, 0.15), 0 20px 60px rgba(0,0,0,0.5);
+            animation: settlementSlideIn 0.6s ease-out;
+        }
+        @keyframes settlementSlideIn {
+            from { opacity: 0; transform: translateY(30px) scale(0.96); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .settlement-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .settlement-header h2 {
+            font-size: 2rem;
+            margin: 0 0 8px 0;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .settlement-winner {
+            font-size: 1.2rem;
+            font-weight: 600;
+            padding: 8px 24px;
+            border-radius: 999px;
+            display: inline-block;
+        }
+        .settlement-winner.good { background: rgba(3, 218, 198, 0.2); color: var(--secondary); border: 1px solid var(--secondary); }
+        .settlement-winner.evil { background: rgba(207, 102, 121, 0.2); color: var(--error); border: 1px solid var(--error); }
+
+        .settlement-section { margin-bottom: 28px; }
+        .settlement-section h3 {
+            font-size: 1rem;
+            color: var(--primary);
+            margin: 0 0 14px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        /* Role Reveal Grid */
+        .role-reveal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 12px;
+        }
+        .role-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 14px;
+            padding: 14px 12px;
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+        }
+        .role-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+        .role-card.good-team { border-color: rgba(3, 218, 198, 0.4); }
+        .role-card.evil-team { border-color: rgba(207, 102, 121, 0.4); }
+        .role-card.dead-player { opacity: 0.55; }
+        .role-card .player-name { font-weight: 700; font-size: 0.95rem; margin-bottom: 6px; }
+        .role-card .role-name { color: var(--primary); font-size: 0.85rem; font-weight: 600; }
+        .role-card .team-badge {
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 999px;
+            margin-top: 6px;
+            display: inline-block;
+        }
+        .role-card .team-badge.good { background: rgba(3, 218, 198, 0.2); color: var(--secondary); }
+        .role-card .team-badge.evil { background: rgba(207, 102, 121, 0.2); color: var(--error); }
+        .role-card .death-icon { position: absolute; top: 8px; right: 8px; font-size: 1.2rem; }
+        .role-card .human-icon { position: absolute; top: 8px; left: 8px; font-size: 0.9rem; }
+
+        /* Timeline */
+        .settlement-timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 280px;
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+        .timeline-event {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 10px 14px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 10px;
+            border-left: 3px solid rgba(255,255,255,0.1);
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+        .timeline-event.event-death { border-left-color: var(--error); }
+        .timeline-event.event-execution { border-left-color: var(--accent); }
+        .timeline-event.event-nomination { border-left-color: var(--primary); }
+        .timeline-event.event-phase { border-left-color: var(--secondary); opacity: 0.7; }
+        .timeline-event .event-icon { font-size: 1.1rem; flex-shrink: 0; }
+        .timeline-event .event-text { flex: 1; }
+
+        /* Stats */
+        .settlement-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 12px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.04);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-card .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        .stat-card .stat-label {
+            font-size: 0.78rem;
+            color: rgba(255,255,255,0.6);
+            margin-top: 4px;
+        }
+
+        /* Action Buttons */
+        .settlement-actions {
+            display: flex;
+            gap: 14px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .btn-rematch {
+            background: linear-gradient(135deg, var(--primary), #9b59b6);
+            color: #fff;
+            font-size: 1.1rem;
+            padding: 14px 36px;
+            border-radius: 14px;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            animation: rematchPulse 2s infinite;
+        }
+        @keyframes rematchPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(187, 134, 252, 0.4); }
+            50%      { box-shadow: 0 0 0 12px rgba(187, 134, 252, 0); }
+        }
+        .btn-rematch:hover { transform: scale(1.05); }
+        .btn-secondary {
+            background: rgba(255,255,255,0.08);
+            color: var(--text);
+            font-size: 1rem;
+            padding: 14px 28px;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.15);
+            cursor: pointer;
+        }
+        .btn-secondary:hover { background: rgba(255,255,255,0.12); }
+
+        .history-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.78);
+            backdrop-filter: blur(8px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1100;
+        }
+
+        .history-overlay.active { display: flex; }
+
+        .history-modal {
+            width: min(1100px, 92vw);
+            height: min(760px, 88vh);
+            background: #181818;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 22px;
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 18px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.45);
+        }
+
+        .history-list-panel,
+        .history-detail-panel {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 16px;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow-y: auto;
+            min-height: 0;
+            margin-top: 12px;
+        }
+
+        .history-entry {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 12px;
+            cursor: pointer;
+        }
+
+        .history-entry.active {
+            border-color: rgba(187, 134, 252, 0.55);
+            background: rgba(187, 134, 252, 0.12);
+        }
+
+        .history-entry strong {
+            display: block;
+            margin-bottom: 6px;
+            color: #fff;
+        }
+
+        .history-detail-scroll {
+            overflow-y: auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin-top: 12px;
+        }
+
+        .history-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .history-summary-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 12px;
+        }
+
+        .history-players {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .history-player-card {
+            background: rgba(255,255,255,0.04);
+            border-radius: 12px;
+            padding: 10px 12px;
+            border-left: 3px solid var(--secondary);
+        }
+
+        .history-player-card.evil { border-left-color: var(--accent); }
+        .history-player-card.dead { opacity: 0.65; }
     </style>
 </head>
+
 <body>
     <header>
         <div>
@@ -383,6 +663,7 @@
         </div>
         <div style="display: flex; gap: 10px; align-items: center;">
             <button id="grimoireBtn" onclick="toggleGrimoire()" style="background: var(--surface); color: var(--secondary); min-width: 60px; padding: 5px; display: none;">Grimoire</button>
+            <button id="historyBtn" onclick="toggleHistoryOverlay()" style="background: var(--surface); color: #ffcc66; min-width: 60px; padding: 5px;">History</button>
             <button id="rulesBtn" onclick="toggleRules()" style="background: var(--surface); color: var(--accent); min-width: 60px; padding: 5px;">Rules</button>
             <button id="langToggle" onclick="toggleLanguage()" style="background: var(--surface); color: white; min-width: 60px; padding: 5px;">CN/EN</button>
             <span id="current-phase-display" class="phase-indicator">SETUP</span>
@@ -439,7 +720,9 @@
                 <label id="evilChatToggleLabel" style="display: none; align-items: center; gap: 5px; cursor: pointer; color: var(--error);">
                     <input type="checkbox" id="evilChatCheck"> <span id="ui-evil-chat-label">Evil Team</span>
                 </label>
-                <select id="targetSelect" style="display: none;"></select>
+                <div id="action-target-container" style="display: none; display: flex; flex-direction: column; gap: 5px;">
+                    <select id="targetSelect" class="status-select target-selector"></select>
+                </div>
                 <select id="voteSelect" style="display: none;"></select>
                 <select id="toneSelect"></select>
             </div>
@@ -502,18 +785,87 @@
         </div>
     </div>
 
+    <!-- Settlement Overlay -->
+    <div id="settlementOverlay" class="settlement-overlay">
+        <div class="settlement-modal">
+            <div class="settlement-header">
+                <h2 id="settlement-title">🏆 游戏结束</h2>
+                <div id="settlement-winner" class="settlement-winner good"></div>
+            </div>
+
+            <div class="settlement-section">
+                <h3 id="settlement-roles-title">📜 角色揭示</h3>
+                <div id="settlement-roles" class="role-reveal-grid"></div>
+            </div>
+
+            <div class="settlement-section">
+                <h3 id="settlement-timeline-title">📋 关键事件时间线</h3>
+                <div id="settlement-timeline" class="settlement-timeline"></div>
+            </div>
+
+            <div class="settlement-section">
+                <h3 id="settlement-stats-title">📊 对局统计</h3>
+                <div id="settlement-stats" class="settlement-stats"></div>
+            </div>
+
+            <div class="settlement-actions">
+                <button class="btn-rematch" onclick="requestRematch()">🔄 再来一局</button>
+                <button class="btn-secondary" onclick="openHistoryFromSettlement()">📚 查看历史</button>
+                <button class="btn-secondary" onclick="closeSettlementOverlay()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="historyOverlay" class="history-overlay" onclick="toggleHistoryOverlay(false)">
+        <div class="history-modal" onclick="event.stopPropagation()">
+            <div class="history-list-panel">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                    <h2 id="history-title" style="margin:0;">📚 历史对局</h2>
+                    <button class="btn-secondary" onclick="toggleHistoryOverlay(false)">关闭</button>
+                </div>
+                <div id="history-subtitle" class="status-subtitle">最近完成的对局与复盘入口</div>
+                <div id="historyList" class="history-list"></div>
+            </div>
+            <div class="history-detail-panel">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                    <h2 id="history-detail-title" style="margin:0;">对局详情</h2>
+                    <button class="btn-secondary" onclick="loadHistoryList(true)">刷新</button>
+                </div>
+                <div id="historyDetail" class="history-detail-scroll">
+                    <div style="opacity:0.72;">请选择一局以查看详情。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let ws = null;
         let pollHandle = null;
         let pendingActionType = null;
+        let pendingActionContext = null;
         let players = [];
         let currentLang = 'zh';
         let currentUserId = 'h1';
         let roleCatalog = {};
         let currentGameId = null;
+        let settlementShownFor = null;
+        let historyCache = [];
+        let activeHistoryGameId = null;
+        let gameState = buildEmptyGameState();
         let lastRenderedDayNumber = null;
         let nominationPromptKey = null;
         let cachedNominationState = null;
+        let statusAttention = false;
+        function backendHttpOrigin() {
+            const { protocol, hostname, port } = window.location;
+            const resolvedPort = port || '8000';
+            return `${protocol}//${hostname}:${resolvedPort}`;
+        }
+        function backendWsOrigin() {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const resolvedPort = window.location.port || '8000';
+            return `${wsProtocol}//${window.location.hostname}:${resolvedPort}`;
+        }
         const MAIN_VIEW_STORAGE_KEY = 'botc.activeMainView';
         function readMainViewPreference() {
             try {
@@ -528,18 +880,6 @@
             } catch (e) {}
         }
         let activeMainView = readMainViewPreference();
-        let statusAttention = false;
-        let gameState = {
-            phase: 'setup',
-            day_number: 0,
-            game_id: null,
-            viewer_mode: 'observer',
-            human_mode: 'none',
-            can_view_grimoire: false,
-            nomination_state: { stage: 'idle' },
-            private_info: [],
-            players: []
-        };
 
         const translations = {
             zh: {
@@ -556,6 +896,7 @@
                 submit_action: "提交行动",
                 content_placeholder: "输入内容...",
                 action_required: "需要行动: {type}",
+                action_retry_prefix: "操作提示",
                 phase_setup: "准备阶段",
                 phase_first_night: "首夜",
                 phase_day_discussion: "白天讨论",
@@ -585,6 +926,24 @@
                 chat_view: "聊天室",
                 status_view: "状态页",
                 rules_btn: "游戏规则",
+                history_btn: "历史",
+                history_title: "历史对局",
+                history_subtitle: "最近完成的对局与复盘入口",
+                history_empty: "当前还没有历史对局。",
+                history_loading: "正在加载历史对局...",
+                history_detail_title: "对局详情",
+                history_detail_empty: "请选择一局以查看详情。",
+                history_open_from_settlement: "📚 查看历史",
+                history_refresh: "刷新",
+                history_rounds: "轮数",
+                history_players: "玩家数",
+                history_winner: "胜利方",
+                history_reason: "获胜原因",
+                history_started_at: "开始时间",
+                history_ended_at: "结束时间",
+                history_timeline: "关键时间线",
+                history_reveal: "角色揭示",
+                history_my_games: "我参与的最近对局",
                 rules_title: "游戏手册",
                 tab_roles: "角色能力",
                 tab_setup: "人数配置",
@@ -606,6 +965,8 @@
                 nomination_card_title: "提名状态",
                 nomination_none: "当前还没有提名。",
                 nomination_open: "提名窗口已开启，你现在可以决定是否提名。",
+                decline_nomination: "不提名",
+                nominate_select_required: "请明确选择一名玩家，或选择“不提名”。",
                 nomination_stage_nomination: "正在收集提名意图",
                 nomination_stage_defense: "被提名者正在辩解",
                 nomination_stage_voting: "所有玩家正在投票",
@@ -653,7 +1014,21 @@
                 role_virgin: "圣女", role_slayer: "杀手", role_soldier: "士兵", role_mayor: "市长",
                 role_butler: "管家", role_drunken: "酒鬼", role_recluse: "隐士", role_saint: "圣徒",
                 role_poisoner: "投毒者", role_spy: "间谍", role_scarlet_woman: "绯红女郎", role_baron: "男爵",
-                role_imp: "小恶魔"
+                role_imp: "小恶魔",
+                // 结算界面
+                settlement_title_default: "🏆 游戏结束",
+                settlement_roles_title: "📜 角色揭示",
+                settlement_timeline_title: "📋 关键事件时间线",
+                settlement_stats_title: "📊 对局统计",
+                settlement_winner_good: "✨ 正义阵营获胜",
+                settlement_winner_evil: "👿 邪恶阵营获胜",
+                settlement_btn_rematch: "🔄 再来一局",
+                settlement_btn_close: "关闭",
+                stat_nominations: "总提名",
+                stat_executions: "总处决",
+                stat_votes: "总投票",
+                stat_days: "对局天数",
+                stat_deaths: "总死亡"
             },
             en: {
                 title: "Ravenswood Bluff",
@@ -669,6 +1044,7 @@
                 submit_action: "Submit Action",
                 content_placeholder: "Type something...",
                 action_required: "Action Required: {type}",
+                action_retry_prefix: "Action hint",
                 phase_setup: "SETUP",
                 phase_first_night: "FIRST NIGHT",
                 phase_day_discussion: "DISCUSSION",
@@ -698,6 +1074,24 @@
                 chat_view: "Chat",
                 status_view: "Status",
                 rules_btn: "Rules",
+                history_btn: "History",
+                history_title: "Game History",
+                history_subtitle: "Recent completed games and replay entry points",
+                history_empty: "No completed games yet.",
+                history_loading: "Loading history...",
+                history_detail_title: "Game Detail",
+                history_detail_empty: "Select a game to view details.",
+                history_open_from_settlement: "📚 View History",
+                history_refresh: "Refresh",
+                history_rounds: "Rounds",
+                history_players: "Players",
+                history_winner: "Winner",
+                history_reason: "Reason",
+                history_started_at: "Started",
+                history_ended_at: "Ended",
+                history_timeline: "Timeline",
+                history_reveal: "Role Reveal",
+                history_my_games: "My recent games",
                 rules_title: "Game Manual",
                 tab_roles: "Roles",
                 tab_setup: "Setup Table",
@@ -719,6 +1113,8 @@
                 nomination_card_title: "Nomination Status",
                 nomination_none: "No nomination is active.",
                 nomination_open: "Nomination window is open. Decide whether to nominate.",
+                decline_nomination: "Do not nominate",
+                nominate_select_required: "Choose a player explicitly, or choose “Do not nominate.”",
                 nomination_stage_nomination: "Collecting nomination intents",
                 nomination_stage_defense: "The nominee is defending",
                 nomination_stage_voting: "Players are voting",
@@ -766,7 +1162,21 @@
                 role_virgin: "Virgin", role_slayer: "Slayer", role_soldier: "Soldier", role_mayor: "Mayor",
                 role_butler: "Butler", role_drunken: "Drunken", role_recluse: "Recluse", role_saint: "Saint",
                 role_poisoner: "Poisoner", role_spy: "Spy", role_scarlet_woman: "Scarlet Woman", role_baron: "Baron",
-                role_imp: "Imp"
+                role_imp: "Imp",
+                // Settlement
+                settlement_title_default: "🏆 Game Over",
+                settlement_roles_title: "📜 Role Reveal",
+                settlement_timeline_title: "📋 Key Timeline",
+                settlement_stats_title: "📊 Statistics",
+                settlement_winner_good: "✨ Good Team Wins",
+                settlement_winner_evil: "👿 Evil Team Wins",
+                settlement_btn_rematch: "🔄 Rematch",
+                settlement_btn_close: "Close",
+                stat_nominations: "Nominations",
+                stat_executions: "Executions",
+                stat_votes: "Votes",
+                stat_days: "Days",
+                stat_deaths: "Deaths"
             }
         };
 
@@ -834,6 +1244,7 @@
             document.getElementById('chatViewTab').textContent = t('chat_view');
             document.getElementById('statusViewTab').textContent = t('status_view');
             document.getElementById('rulesBtn').textContent = t('rules_btn');
+            document.getElementById('historyBtn').textContent = t('history_btn');
             document.getElementById('actionInput').placeholder = t('content_placeholder');
             document.getElementById('ui-setup-title').textContent = t('setup_title');
             document.getElementById('ui-setup-desc').textContent = t('setup_desc');
@@ -844,6 +1255,9 @@
             document.getElementById('ui-private-info-title').textContent = t('private_info_title');
             document.getElementById('grimoireBtn').textContent = t('grimoire_btn');
             document.getElementById('ui-evil-chat-label').textContent = t('evil_chat_label');
+            document.getElementById('history-title').textContent = `📚 ${t('history_title')}`;
+            document.getElementById('history-subtitle').textContent = t('history_subtitle');
+            document.getElementById('history-detail-title').textContent = t('history_detail_title');
             
             if (!ws) document.getElementById('status-text').textContent = t('waiting');
             else document.getElementById('status-text').textContent = t('connected');
@@ -881,6 +1295,8 @@
                 phase: 'setup',
                 day_number: 0,
                 game_id: gameId,
+                setup_configured: false,
+                setup_required: true,
                 viewer_mode: 'observer',
                 human_mode: 'none',
                 can_view_grimoire: false,
@@ -895,9 +1311,12 @@
             lastRenderedDayNumber = null;
             nominationPromptKey = null;
             cachedNominationState = null;
+            historyCache = [];
+            activeHistoryGameId = null;
             statusAttention = false;
             players = [];
             pendingActionType = null;
+            pendingActionContext = null;
             gameState = buildEmptyGameState(nextGameId);
             const logBox = document.getElementById('logBox');
             if (logBox) {
@@ -907,7 +1326,18 @@
             if (privateInfoList) {
                 privateInfoList.innerHTML = '';
             }
+            resetSetupOverlay();
             updateStatusTabAttention();
+            closeSettlementOverlay();
+            toggleHistoryOverlay(false);
+            settlementShownFor = null;
+        }
+
+        function resetSetupOverlay() {
+            document.getElementById('setupOverlay').style.display = 'none';
+            document.getElementById('setupStep1').style.display = 'block';
+            document.getElementById('setupStep2').style.display = 'none';
+            document.getElementById('setupStepReconnect').style.display = 'none';
         }
 
         function nominationHasCurrentData(nominationState) {
@@ -1243,24 +1673,16 @@
             box.scrollTop = box.scrollHeight;
         }
 
-        function updatePlayerList(playerData) {
+        function isNominationAction(type) {
+            return type === 'nominate' || type === 'nomination_intent';
+        }
+
+        function updatePlayerList(playerData, requiredTargets = null, canTargetSelf = null, refreshActionSelectors = false) {
             players = playerData;
             const container = document.getElementById('playerList');
             container.innerHTML = '';
-            
-            const targetSelect = document.getElementById('targetSelect');
-            const previousTarget = targetSelect.value;
-            targetSelect.innerHTML = `<option value="">${t('select_target')}</option>`;
 
-            let selfPlayer = playerData.find(p => p.player_id === currentUserId);
-            const evilChatAllowed = selfPlayer && selfPlayer.team === 'evil' && gameState.viewer_mode === 'player' && ['first_night', 'night'].includes(gameState.phase);
-            if (evilChatAllowed) {
-                document.getElementById('evilChatToggleLabel').style.display = 'flex';
-            } else {
-                document.getElementById('evilChatToggleLabel').style.display = 'none';
-                document.getElementById('evilChatCheck').checked = false;
-            }
-
+            // Render player list items
             playerData.forEach(p => {
                 const div = document.createElement('div');
                 div.className = `player-item ${p.is_alive ? 'alive' : 'dead'}`;
@@ -1269,22 +1691,61 @@
                 let roleDisplayName = roleId ? roleName(roleId) : '';
                 div.innerHTML = `<div><span>${p.name}</span><br><small class="player-role-tag">${roleDisplayName}</small></div> <small>${statusText}</small>`;
                 container.appendChild(div);
-
-                const canTarget =
-                    pendingActionType === 'death_trigger'
-                        ? p.player_id !== currentUserId
-                        : p.is_alive && p.player_id !== currentUserId;
-
-                if (canTarget) {
-                    const opt = document.createElement('option');
-                    opt.value = p.player_id;
-                    opt.textContent = p.name;
-                    targetSelect.appendChild(opt);
-                }
             });
 
-            if (previousTarget && Array.from(targetSelect.options).some((opt) => opt.value === previousTarget)) {
-                targetSelect.value = previousTarget;
+            if (refreshActionSelectors) {
+                renderActionTargetSelectors(playerData, requiredTargets, canTargetSelf);
+            }
+        }
+
+        function renderActionTargetSelectors(playerData, requiredTargets = null, canTargetSelf = null) {
+            const targetContainer = document.getElementById('action-target-container') || document.getElementById('targetSelect').parentElement;
+            const previousSelections = Array.from(targetContainer.querySelectorAll('.target-selector')).map((s) => s.value);
+            targetContainer.innerHTML = '';
+
+            const effectiveRequiredTargets = requiredTargets ?? pendingActionContext?.required_targets ?? 1;
+            const effectiveCanTargetSelf = canTargetSelf ?? pendingActionContext?.can_target_self ?? false;
+            const count = Math.max(1, effectiveRequiredTargets || 1);
+            const selectors = [];
+
+            for (let i = 0; i < count; i++) {
+                const select = document.createElement('select');
+                select.id = `targetSelect_${i}`;
+                select.className = 'status-select target-selector';
+                select.style.marginBottom = '8px';
+                select.innerHTML = `<option value="">${t('select_target')} ${count > 1 ? (i + 1) : ''}</option>`;
+
+                if (isNominationAction(pendingActionType) && i === 0) {
+                    const opt = document.createElement('option');
+                    opt.value = 'not_nominating';
+                    opt.textContent = t('decline_nomination');
+                    select.appendChild(opt);
+                }
+
+                playerData.forEach(p => {
+                    const isSelf = p.player_id === currentUserId;
+                    const canTarget = (pendingActionType === 'death_trigger' || pendingActionType === 'night_action' || pendingActionType === 'nominate' || pendingActionType === 'nomination_intent')
+                        ? (effectiveCanTargetSelf ? true : !isSelf) && (p.is_alive || pendingActionType === 'night_action' || pendingActionType === 'death_trigger')
+                        : p.is_alive && !isSelf;
+
+                    if (canTarget) {
+                        const opt = document.createElement('option');
+                        opt.value = p.player_id;
+                        opt.textContent = p.name;
+                        select.appendChild(opt);
+                    }
+                });
+
+                if (previousSelections[i]) {
+                    select.value = previousSelections[i];
+                }
+
+                targetContainer.appendChild(select);
+                selectors.push(select);
+            }
+
+            if (selectors.length > 0) {
+                window.primaryTargetSelect = selectors[0];
             }
         }
 
@@ -1295,7 +1756,7 @@
             document.getElementById('current-phase-display').textContent = `${phaseName} (${dayText})`;
             
             // Setup Overlay Logic
-            if (gameState.phase === 'setup' && ws) {
+            if (gameState.setup_required && ws) {
                 document.getElementById('setupOverlay').style.display = 'flex';
             } else {
                 document.getElementById('setupOverlay').style.display = 'none';
@@ -1316,7 +1777,7 @@
 
         async function fetchGameState() {
             try {
-                const res = await fetch(`http://localhost:8000/api/game/state?player_id=${currentUserId}`);
+                const res = await fetch(`${backendHttpOrigin()}/api/game/state?player_id=${encodeURIComponent(currentUserId)}`);
                 const data = await res.json();
                 const previousGameId = currentGameId;
                 if (previousGameId !== data.game_id) {
@@ -1335,15 +1796,23 @@
                 }
                 lastRenderedDayNumber = gameState.day_number;
                 updatePhaseDisplay();
-                updatePlayerList(data.players);
+                updatePlayerList(data.players, null, null, false);
                 renderNominationState();
                 renderPrivateInfo();
+
+                // 结算检测
+                if (gameState.phase === 'game_over' && settlementShownFor !== gameState.game_id) {
+                    fetchAndShowSettlement();
+                } else if (gameState.phase !== 'game_over') {
+                    closeSettlementOverlay();
+                    settlementShownFor = null;
+                }
             } catch(e) {}
         }
 
         async function refreshRoleCatalog() {
             try {
-                const res = await fetch('http://localhost:8000/api/game/roles');
+                const res = await fetch(`${backendHttpOrigin()}/api/game/roles`);
                 const data = await res.json();
                 roleCatalog = Object.fromEntries((data.roles || []).map((role) => [role.role_id, role]));
             } catch (e) {}
@@ -1404,8 +1873,14 @@
         }
 
         function connect() {
-            currentUserId = document.getElementById('playerId').value;
-            ws = new WebSocket(`ws://${window.location.hostname}:8000/ws/${currentUserId}`);
+            currentUserId = document.getElementById('playerId').value.trim();
+            if (!currentUserId) {
+                logMessage(currentLang === 'zh' ? '请输入玩家 ID 后再加入。' : 'Enter a player ID before joining.');
+                document.getElementById('status-text').textContent = currentLang === 'zh' ? '缺少玩家 ID' : 'Missing player ID';
+                return;
+            }
+            document.getElementById('status-text').textContent = currentLang === 'zh' ? '连接中...' : 'Connecting...';
+            ws = new WebSocket(`${backendWsOrigin()}/ws/${encodeURIComponent(currentUserId)}`);
             
             ws.onopen = async () => {
                 logMessage(t('alert_connected') + currentUserId);
@@ -1417,7 +1892,7 @@
                 
                 // 初次连接检查是否有正在进行的游戏
                 fetchGameState().then(() => {
-                    if (gameState.phase !== 'setup') {
+                    if (!gameState.setup_required && gameState.phase !== 'setup') {
                         document.getElementById('setupOverlay').style.display = 'flex';
                         document.getElementById('setupStep1').style.display = 'none';
                         document.getElementById('setupStep2').style.display = 'none';
@@ -1427,6 +1902,19 @@
 
                 updateUIStrings();
             };
+
+            ws.onerror = () => {
+                logMessage(currentLang === 'zh'
+                    ? '连接服务器失败，请检查后端服务和 WebSocket 是否正常。'
+                    : 'Failed to connect to server. Please check the backend service and WebSocket.');
+                document.getElementById('status-text').textContent = currentLang === 'zh' ? '连接失败' : 'Connection failed';
+                document.getElementById('connectBtn').disabled = false;
+            };
+
+            ws.onclose = () => {
+                document.getElementById('status-text').textContent = t('waiting');
+                document.getElementById('connectBtn').disabled = false;
+            };
             
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
@@ -1435,6 +1923,12 @@
                     fetchGameState();
                 } else if (data.type === 'action_request') {
                     handleActionRequest(data.action_type, data.context);
+                } else if (data.type === 'game_rematch') {
+                    logMessage("--- " + (currentLang === 'zh' ? "正在开始新对局..." : "Starting new game...") + " ---");
+                    clearSessionArtifacts(data.new_game_id);
+                    closeSettlementOverlay();
+                    resetSetupOverlay();
+                    fetchGameState();
                 }
             };
         }
@@ -1465,7 +1959,7 @@
             const humanMode = mode === 'observe' ? 'storyteller' : 'player';
             
             try {
-                const res = await fetch('http://localhost:8000/api/game/setup', {
+                const res = await fetch(`${backendHttpOrigin()}/api/game/setup`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
@@ -1487,10 +1981,276 @@
 
         async function confirmReset() {
             if (confirm(t('reset_confirm'))) {
-                await fetch('http://localhost:8000/api/game/reset', { method: 'POST' });
+                await fetch(`${backendHttpOrigin()}/api/game/reset`, { method: 'POST' });
                 window.location.reload();
             }
         }
+
+        // --------------- 结算逻辑 ---------------
+
+        async function fetchAndShowSettlement() {
+            try {
+                const res = await fetch(`${backendHttpOrigin()}/api/game/settlement`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    showSettlementOverlay(data);
+                    settlementShownFor = data.game_id;
+                }
+            } catch (e) {
+                console.error("Failed to fetch settlement:", e);
+            }
+        }
+
+        function showSettlementOverlay(data) {
+            const overlay = document.getElementById('settlementOverlay');
+            overlay.classList.add('active');
+
+            // Header
+            const winnerEl = document.getElementById('settlement-winner');
+            const team = data.winning_team || 'unknown';
+            winnerEl.className = `settlement-winner ${team}`;
+            winnerEl.textContent = t(`settlement_winner_${team}`);
+
+            // Roles
+            const rolesGrid = document.getElementById('settlement-roles');
+            rolesGrid.innerHTML = '';
+            (data.players || []).forEach(p => {
+                const card = document.createElement('div');
+                card.className = `role-card ${p.team}-team ${p.is_alive ? '' : 'dead-player'}`;
+                
+                const roleNameStr = roleName(p.true_role_id);
+                const deathIcon = p.is_alive ? '' : `<span class="death-icon">💀</span>`;
+                const humanIcon = p.is_human ? `<span class="human-icon">👤</span>` : '';
+
+                card.innerHTML = `
+                    ${humanIcon}
+                    ${deathIcon}
+                    <div class="player-name">${p.name}</div>
+                    <div class="role-name">${roleNameStr}</div>
+                    <div class="team-badge ${p.team}">${p.team === 'good' ? 'Good' : 'Evil'}</div>
+                `;
+                rolesGrid.appendChild(card);
+            });
+
+            // Timeline
+            const timelineBox = document.getElementById('settlement-timeline');
+            timelineBox.innerHTML = '';
+            (data.timeline || []).forEach(ev => {
+                const item = document.createElement('div');
+                let icon = '•';
+                let typeClass = '';
+                if (ev.event_type === 'player_death') { icon = '💀'; typeClass = 'event-death'; }
+                else if (ev.event_type === 'execution_resolved') { icon = '⚖️'; typeClass = 'event-execution'; }
+                else if (ev.event_type === 'nomination_started') { icon = '📣'; typeClass = 'event-nomination'; }
+                else if (ev.event_type === 'phase_changed') { icon = '⏳'; typeClass = 'event-phase'; }
+
+                item.className = `timeline-event ${typeClass}`;
+                item.innerHTML = `
+                    <span class="event-icon">${icon}</span>
+                    <div class="event-text">
+                        <small style="opacity:0.6">[R${ev.round}]</small> <strong>${ev.summary}</strong>
+                    </div>
+                `;
+                timelineBox.appendChild(item);
+            });
+
+            // Stats
+            const statsBox = document.getElementById('settlement-stats');
+            statsBox.innerHTML = '';
+            const s = data.statistics || {};
+            const statItems = [
+                { key: 'stat_days', val: s.days_played || 0 },
+                { key: 'stat_nominations', val: s.total_nominations || 0 },
+                { key: 'stat_executions', val: s.total_executions || 0 },
+                { key: 'stat_deaths', val: s.total_deaths || 0 },
+                { key: 'stat_votes', val: s.total_votes || 0 }
+            ];
+            statItems.forEach(item => {
+                const sc = document.createElement('div');
+                sc.className = 'stat-card';
+                sc.innerHTML = `
+                    <div class="stat-value">${item.val}</div>
+                    <div class="stat-label">${t(item.key)}</div>
+                `;
+                statsBox.appendChild(sc);
+            });
+
+            updateUIStrings(); // 为了重新应用 i18n
+        }
+
+        function closeSettlementOverlay() {
+            const overlay = document.getElementById('settlementOverlay');
+            if (overlay) overlay.classList.remove('active');
+        }
+
+        function openHistoryFromSettlement() {
+            closeSettlementOverlay();
+            toggleHistoryOverlay(true);
+        }
+
+        async function toggleHistoryOverlay(forceOpen = null) {
+            const overlay = document.getElementById('historyOverlay');
+            const shouldOpen = forceOpen === null ? !overlay.classList.contains('active') : !!forceOpen;
+            if (!shouldOpen) {
+                overlay.classList.remove('active');
+                return;
+            }
+            overlay.classList.add('active');
+            await loadHistoryList();
+        }
+
+        async function loadHistoryList(focusCurrentSelection = false) {
+            const list = document.getElementById('historyList');
+            list.innerHTML = `<div style="opacity:0.72;">${t('history_loading')}</div>`;
+            try {
+                const historyRes = await fetch(`${backendHttpOrigin()}/api/game/history?limit=20`);
+                const historyData = await historyRes.json();
+                if (historyData.status !== 'ok') {
+                    list.innerHTML = `<div style="opacity:0.72;">${historyData.message || t('history_empty')}</div>`;
+                    return;
+                }
+
+                let playerGames = [];
+                if (currentUserId) {
+                    try {
+                        const playerRes = await fetch(`${backendHttpOrigin()}/api/game/history/player/${encodeURIComponent(currentUserId)}`);
+                        const playerData = await playerRes.json();
+                        if (playerData.status === 'ok') {
+                            playerGames = Array.isArray(playerData.games) ? playerData.games.map((item) => item.game_id) : [];
+                        }
+                    } catch (e) {}
+                }
+
+                historyCache = Array.isArray(historyData.games) ? historyData.games : [];
+                renderHistoryList(historyCache, new Set(playerGames));
+
+                const selectedGameId = focusCurrentSelection ? activeHistoryGameId : (activeHistoryGameId || historyCache[0]?.game_id);
+                if (selectedGameId) {
+                    await openHistoryDetail(selectedGameId);
+                } else {
+                    document.getElementById('historyDetail').innerHTML = `<div style="opacity:0.72;">${t('history_detail_empty')}</div>`;
+                }
+            } catch (e) {
+                list.innerHTML = `<div style="opacity:0.72;">${e}</div>`;
+            }
+        }
+
+        function renderHistoryList(games, playerGameIds) {
+            const list = document.getElementById('historyList');
+            if (!games.length) {
+                list.innerHTML = `<div style="opacity:0.72;">${t('history_empty')}</div>`;
+                return;
+            }
+            list.innerHTML = '';
+            games.forEach((game) => {
+                const entry = document.createElement('div');
+                entry.className = `history-entry ${game.game_id === activeHistoryGameId ? 'active' : ''}`;
+                const winner = game.winning_team === 'good' ? t('settlement_winner_good') : t('settlement_winner_evil');
+                const mine = playerGameIds.has(game.game_id) ? ` • ${t('history_my_games')}` : '';
+                entry.innerHTML = `
+                    <strong>${game.game_id}</strong>
+                    <div>${t('history_winner')}: ${winner}${mine}</div>
+                    <div>${t('history_rounds')}: ${game.round_count || 0} · ${t('history_players')}: ${game.player_count || 0}</div>
+                    <div style="opacity:0.72;">${game.ended_at || ''}</div>
+                `;
+                entry.onclick = () => openHistoryDetail(game.game_id);
+                list.appendChild(entry);
+            });
+        }
+
+        async function openHistoryDetail(gameId) {
+            activeHistoryGameId = gameId;
+            renderHistoryList(historyCache, new Set());
+            const detail = document.getElementById('historyDetail');
+            detail.innerHTML = `<div style="opacity:0.72;">${t('history_loading')}</div>`;
+            try {
+                const res = await fetch(`${backendHttpOrigin()}/api/game/history/${encodeURIComponent(gameId)}`);
+                const data = await res.json();
+                if (data.status !== 'ok') {
+                    detail.innerHTML = `<div style="opacity:0.72;">${data.message || t('history_detail_empty')}</div>`;
+                    return;
+                }
+                renderHistoryDetail(data);
+            } catch (e) {
+                detail.innerHTML = `<div style="opacity:0.72;">${e}</div>`;
+            }
+        }
+
+        function renderHistoryDetail(data) {
+            const detail = document.getElementById('historyDetail');
+            const settlement = data.settlement || data;
+            const stats = settlement.statistics || {};
+            const winner = settlement.winning_team === 'good' ? t('settlement_winner_good') : t('settlement_winner_evil');
+            const players = Array.isArray(data.players) ? data.players : [];
+            const timeline = Array.isArray(settlement.timeline) ? settlement.timeline : [];
+
+            detail.innerHTML = `
+                <div class="history-summary-grid">
+                    <div class="history-summary-card"><strong>${t('history_winner')}</strong><div>${winner}</div></div>
+                    <div class="history-summary-card"><strong>${t('history_reason')}</strong><div>${settlement.victory_reason || '-'}</div></div>
+                    <div class="history-summary-card"><strong>${t('history_started_at')}</strong><div>${data.started_at || '-'}</div></div>
+                    <div class="history-summary-card"><strong>${t('history_ended_at')}</strong><div>${data.ended_at || '-'}</div></div>
+                    <div class="history-summary-card"><strong>${t('history_rounds')}</strong><div>${settlement.duration_rounds || data.round_count || 0}</div></div>
+                    <div class="history-summary-card"><strong>${t('history_players')}</strong><div>${data.player_count || stats.player_count || players.length}</div></div>
+                </div>
+                <div>
+                    <h3 style="margin:0 0 10px 0;">${t('history_reveal')}</h3>
+                    <div class="history-players" id="historyPlayersGrid"></div>
+                </div>
+                <div>
+                    <h3 style="margin:0 0 10px 0;">${t('history_timeline')}</h3>
+                    <div id="historyTimelineBox" class="settlement-timeline"></div>
+                </div>
+            `;
+
+            const playersGrid = document.getElementById('historyPlayersGrid');
+            players.forEach((player) => {
+                const card = document.createElement('div');
+                const team = player.team || 'good';
+                card.className = `history-player-card ${team} ${player.is_alive ? '' : 'dead'}`;
+                card.innerHTML = `
+                    <strong>${player.player_name || player.name || player.player_id}</strong>
+                    <div>${roleName(player.true_role_id || player.role_id)}</div>
+                    <div style="opacity:0.72;">${team === 'good' ? 'Good' : 'Evil'}${player.is_human ? ' · 👤' : ''}</div>
+                `;
+                playersGrid.appendChild(card);
+            });
+
+            const timelineBox = document.getElementById('historyTimelineBox');
+            if (!timeline.length) {
+                timelineBox.innerHTML = `<div style="opacity:0.72;">-</div>`;
+                return;
+            }
+            timeline.forEach((ev) => {
+                const item = document.createElement('div');
+                item.className = 'timeline-event';
+                item.innerHTML = `
+                    <span class="event-icon">•</span>
+                    <div class="event-text">
+                        <small style="opacity:0.6">[R${ev.round || '-'}]</small> <strong>${ev.summary || ev.event_type}</strong>
+                    </div>
+                `;
+                timelineBox.appendChild(item);
+            });
+        }
+
+        async function requestRematch() {
+            try {
+                const res = await fetch(`${backendHttpOrigin()}/api/game/rematch`, { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    // ws message will handle the rest, but we keep this as backup
+                    closeSettlementOverlay();
+                    clearSessionArtifacts(data.new_game_id);
+                } else {
+                    alert("Rematch failed: " + data.message);
+                }
+            } catch (e) {
+                alert("Connection failed: " + e);
+            }
+        }
+
 
         function handleActionRequest(type, context) {
             if ((type === 'nominate' || type === 'nomination_intent')) {
@@ -1498,7 +2258,12 @@
             }
 
             pendingActionType = type;
-            updatePlayerList(players);
+            pendingActionContext = context || {};
+            const requiredTargets = context?.required_targets || 1;
+            const canTargetSelf = context?.can_target_self || false;
+            updatePlayerList(players, requiredTargets, canTargetSelf, false);
+            renderActionTargetSelectors(players, requiredTargets, canTargetSelf);
+            
             let promptType = type === 'defense_speech' ? t('nomination_stage_defense') : type;
             if (type === 'vote') {
                 promptType = `${t('nomination_stage_voting')} - ${playerName(gameState.nomination_state?.current_nominee)}`;
@@ -1508,12 +2273,17 @@
                 promptType = t('death_trigger_prompt');
             }
             document.getElementById('action-prompt').textContent = t('action_required', { type: promptType });
+            if (context?.reminder) {
+                logMessage(`${t('action_retry_prefix')}: ${context.reminder}`);
+            }
             document.getElementById('submitBtn').disabled = false;
             
             const textAction = type === 'speak' || type === 'defense_speech';
             document.getElementById('actionInput').style.display = textAction ? 'block' : 'none';
             document.getElementById('toneSelect').style.display = textAction ? 'block' : 'none';
-            document.getElementById('targetSelect').style.display = (type === 'night_action' || type === 'death_trigger' || type === 'nominate' || type === 'nomination_intent') ? 'block' : 'none';
+            // Use container instead of single select
+            document.getElementById('action-target-container').style.display = (type === 'night_action' || type === 'death_trigger' || type === 'nominate' || type === 'nomination_intent') ? 'block' : 'none';
+            
             document.getElementById('voteSelect').style.display = (type === 'vote') ? 'block' : 'none';
             document.getElementById('skipBtn').style.display = (type === 'speak') ? 'block' : 'none';
             if (type === 'defense_speech') {
@@ -1551,21 +2321,34 @@
             if (pendingActionType === 'speak' || pendingActionType === 'defense_speech') {
                 payload.content = document.getElementById('actionInput').value;
                 payload.tone = document.getElementById('toneSelect').value;
-            } else if (pendingActionType === 'night_action' || pendingActionType === 'death_trigger') {
-                const target = document.getElementById('targetSelect').value;
-                if (target) {
-                    payload.action = pendingActionType;
-                    payload.target = target;
+            } else if (pendingActionType === 'night_action' || pendingActionType === 'death_trigger' || pendingActionType === 'nominate' || pendingActionType === 'nomination_intent') {
+                const selectors = document.querySelectorAll('.target-selector');
+                const targets = Array.from(selectors).map(s => s.value).filter(v => v !== "");
+                
+                if (targets.length > 0) {
+                    if (isNominationAction(pendingActionType)) {
+                        if (targets[0] === 'not_nominating') {
+                            payload.action = 'not_nominating';
+                            payload.target = 'not_nominating';
+                        } else {
+                            payload.action = 'nominate';
+                            payload.target = targets[0];
+                        }
+                    } else {
+                        payload.action = pendingActionType;
+                        payload.target = targets.length === 1 ? targets[0] : targets.join(",");
+                        payload.targets = targets;
+                    }
                 } else {
+                    if (isNominationAction(pendingActionType)) {
+                        logMessage(t('nominate_select_required'));
+                        return;
+                    }
                     payload.action = 'none';
-                }
-            } else if (pendingActionType === 'nominate' || pendingActionType === 'nomination_intent') {
-                const target = document.getElementById('targetSelect').value;
-                if (target) {
-                    payload.action = 'nominate';
-                    payload.target = target;
-                } else {
-                    payload.action = 'none';
+                    if (pendingActionType === 'night_action' || pendingActionType === 'death_trigger') {
+                        payload.action = pendingActionType;
+                        payload.target = null;
+                    }
                 }
             } else if (pendingActionType === 'vote') {
                 payload.decision = document.getElementById('voteSelect').value === 'true';
@@ -1579,11 +2362,16 @@
             document.getElementById('submitBtn').disabled = true;
             document.getElementById('skipBtn').style.display = 'none';
             pendingActionType = null;
+            pendingActionContext = null;
             document.getElementById('actionInput').value = '';
             document.getElementById('actionInput').style.display = 'block';
             document.getElementById('toneSelect').style.display = 'block';
-            document.getElementById('targetSelect').value = '';
-            document.getElementById('targetSelect').style.display = 'none';
+            
+            const targetContainer = document.getElementById('action-target-container');
+            if (targetContainer) {
+                targetContainer.style.display = 'none';
+                targetContainer.innerHTML = '';
+            }
             document.getElementById('voteSelect').style.display = 'none';
         }
 
@@ -1602,7 +2390,7 @@
             content.innerHTML = '<p>Loading...</p>';
             
             try {
-                const res = await fetch(`http://localhost:8000/api/game/grimoire?player_id=${currentUserId}`);
+                const res = await fetch(`${backendHttpOrigin()}/api/game/grimoire?player_id=${encodeURIComponent(currentUserId)}`);
                 if (res.status === 403) {
                     content.innerHTML = '<p style="color: var(--error)">Only the storyteller can open the Grimoire.</p>';
                     return;
@@ -1656,7 +2444,7 @@
             document.querySelector(`.tab-btn[onclick*="${tab}"]`).classList.add('active');
 
             if (tab === 'roles') {
-                const res = await fetch('http://localhost:8000/api/game/roles');
+                const res = await fetch(`${backendHttpOrigin()}/api/game/roles`);
                 const data = await res.json();
                 let html = '<div style="display: grid; gap: 15px;">';
                 data.roles.forEach(r => {

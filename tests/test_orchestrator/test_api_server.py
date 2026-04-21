@@ -2,8 +2,6 @@ import json
 import logging
 import importlib
 import time
-from pathlib import Path
-import uuid
 
 import pytest
 from fastapi.testclient import TestClient
