@@ -1,20 +1,20 @@
 # 鸦木布拉夫小镇 (Ravenswood Bluff) AI 引擎
 
-![Version](https://img.shields.io/badge/version-alpha--0.2_dev-orange)
+![Version](https://img.shields.io/badge/version-alpha--0.3-orange)
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**鸦木布拉夫小镇** 是一个基于多智能体（Multi-Agent）与状态机驱动的《血染钟楼》（Blood on the Clocktower）社交推演引擎。它深度还原了官方剧本《暗流涌动》（Trouble Brewing），并利用大语言模型（LLM）赋予 AI 玩家独特的个性、逻辑推理与伪装能力。当前处于 **Alpha 0.2** 研发阶段，聚焦于 AI 智能提升与说书人裁断系统的强化。
+**鸦木布拉夫小镇** 是一个基于多智能体（Multi-Agent）与状态机驱动的《血染钟楼》（Blood on the Clocktower）社交推演引擎。它深度还原了官方剧本《暗流涌动》（Trouble Brewing），并利用大语言模型（LLM）赋予 AI 玩家独特的个性、逻辑推理与伪装能力。当前处于 **Alpha 0.3** 研发阶段，聚焦于 **可观测性 (Observability)** 与 **战略智能 (Strategic Intelligence)** 的系统性提升。
 
 ---
 
 ## 🌟 核心特性
 
-- **🧠 认知一致性 (Identity Alignment)与智能增强**：AI 代理拥有真实的“认知层”。即使是**酒鬼**或**中毒**状态，代理也会基于其感知的虚假身份进行推演。Alpha 0.2 的重点在于推进更完善的社交图谱与长期记忆（Episodic Memory）。
-- **📖 说书人智能决策框架**：具备平衡裁断判定体系（Balance Judgement），能自主评估当前的局势动态并控制红鲱鱼、酒鬼信息、解药机制，引导局势走向精彩。
-- **⚖️ 严谨的规则引擎**：完整实现 Trouble Brewing 剧本 22 个角色逻辑。严格遵循官方 **Night Sheet** 行动顺序（Night Order），完美处理小恶魔传位、守鸦人死亡触发等复杂互动。
-- **🗳️ 交互式提名网络**：支持高并发的昼间互动、多轮动态提名、以及幽灵票流转判定，自动清理残存记录消除状态污染。
-- **🛠️ 开发者审计与自动化验收生态**：提供 `MockBackend`、验收脚本集群（Wave 1/2 Acceptance）和 `simulate_game.py`，支持在不调用真实大模型的前提下进行断言规模测试，甚至解析对局重播日志（Replay Parser）。
+- **🧠 结构化认知与高保真记忆**：AI 代理拥有真实的“认知层”。Alpha 0.3 引入了 **三层记忆架构 (Objective/High-Confidence/Public)** 与 **向量记忆 (Vector Memory/RAG)**，确保 AI 在长局对局中依然能保持逻辑一致性。
+- **🎭 导演级说书人智能**：具备 **战略平衡逻辑 (Smart Balancing)**，能根据实时局势（优势分值）动态调整信息干扰策略，并提供“内心独白”以解释决策动机。
+- **⚖️ 严谨的规则引擎与复杂角色**：完整实现 Trouble Brewing 剧本 22 个角色逻辑。Alpha 0.3 补完了 **圣女 (Virgin)**、**猎手 (Slayer)** 等复杂角色的联动，并支持小恶魔传位等邪恶阵营高级战术。
+- **📊 全量数据资产化**：支持对局历史、AI 思维链、说书人裁量账本的一键全量导出（`scripts/export_all_assets.py`），为模型微调提供高质量语料。
+- **🛠️ 完善的验收生态**：提供 `alpha3_acceptance.py` 聚合门禁，涵盖从底层 RAG 检索到顶层战略平衡的全量验证。
 
 ---
 
@@ -74,11 +74,11 @@ python scripts/storyteller_balance_acceptance.py
 
 ## 📂 项目架构
 
-- `docs/alpha-0.2-plan/`: 最新版本的研发进展看板与专项提升计划（AI/前端/裁定等方案图）。
-- `src/agents/`: AI 行动内核、认知层同步模块、记忆组件（工作记忆/情景记忆）。
-- `src/engine/`: 剧本内核引擎、夜晚时间轴控制器。
-- `src/orchestrator/`: 顶层通信控制、信息分发（Information Broker）及智能说书人逻辑（Storyteller Balance）。
-- `src/state/`: 基于不可变状态机（Pydantic Snapshot）的数据链路结构。
+- `docs/alpha-0.3-plan/`: 最新版本的研发进展看板与专项提升计划（数据工程/战略说书人/RAG 记忆等方案图）。
+- `src/agents/`: AI 行动内核、认知层同步模块、记忆组件（三层分级记忆/向量检索）。
+- `src/engine/`: 剧本内核引擎、夜晚时间轴控制器、对局数据采集器。
+- `src/orchestrator/`: 顶层通信控制、信息分发及导演级说书人逻辑（Strategic Adjudication）。
+- `src/state/`: 基于不可变状态机（Pydantic Snapshot）的数据链路结构与持久化存储。
 - `public/`: 浏览器 UI，游戏控制台与魔典渲染前台。
 
 ---
