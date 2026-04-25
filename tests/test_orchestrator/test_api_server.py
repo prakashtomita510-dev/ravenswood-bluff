@@ -150,6 +150,18 @@ def test_storyteller_mode_can_view_grimoire(monkeypatch):
         assert "players" in payload
 
 
+def test_night_order_rulebook_endpoint(monkeypatch):
+    with make_client(monkeypatch) as client:
+        response = client.get("/api/game/night-order")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["script_id"] == "trouble_brewing"
+        assert payload["entries"]
+        assert any(entry["role_id"] == "poisoner" for entry in payload["entries"])
+        assert any(entry["role_id"] == "imp" for entry in payload["entries"])
+        assert "tie_strategy" in payload
+
+
 def test_build_nomination_state_preserves_payload_vote_details(monkeypatch):
     monkeypatch.setenv("BOTC_BACKEND", "mock")
     import src.api.server as server_module

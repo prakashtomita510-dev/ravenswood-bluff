@@ -452,5 +452,6 @@ def test_storyteller_balance_uses_full_decision_ledger_for_node_matching():
     )
 
     assert len(samples) == 1
-    assert samples[0].chosen_adjudication["category"] == "private_info"
+    assert samples[0].chosen_adjudication["category"] == "night_info"
+    assert samples[0].chosen_adjudication["bucket"] == "night_info.fixed_info"
     assert samples[0].chosen_adjudication["trace_id"] == "trace-private-01"

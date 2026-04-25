@@ -189,6 +189,7 @@ class GameEvent(BaseModel):
     event_type: str
     timestamp: datetime = Field(default_factory=datetime.now)
     phase: GamePhase
+    day_number: int = 1
     round_number: int
     trace_id: str = ""
     actor: Optional[str] = None       # 事件发起者的 player_id
@@ -265,6 +266,7 @@ class AgentActionLegalContext(BaseModel):
     remaining_voters: tuple[str, ...] = ()
     required_targets: int = 1
     can_target_self: bool = False
+    can_slayer_shot: bool = False
 
 
 class ExecutionCandidate(BaseModel):
@@ -399,6 +401,7 @@ class GameConfig(BaseModel):
     human_player_ids: list[str] = Field(default_factory=list)  # 人类玩家ID
     is_human_participant: bool = True     # 人类是否参与游戏 (True: 玩家, False: 旁观)
     storyteller_mode: str = "auto"   # "auto" 自动说书人 / "human" 人类说书人
+    storyteller_delegated: bool = False # 是否交由 AI 托管 (仅在 human 模式下有效)
     llm_model: str = "gpt-4o-mini"
     backend_mode: str = "auto"
     audit_mode: bool = False

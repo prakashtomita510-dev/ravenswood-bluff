@@ -117,6 +117,11 @@ def test_storyteller_balance_sample_index_tracks_multiple_full_games():
     assert len(payload["full_games"]) >= 1
     assert all("game_id" in item and "node_count" in item for item in payload["full_games"])
     assert any(item.get("source") == "mock_full_game" for item in payload["full_games"])
+    assert any(
+        item.get("source") == "mock_full_game"
+        and item.get("aggregate_balance_summary", {}).get("night_info_judgement_count", 0) >= 1
+        for item in payload["full_games"]
+    )
     assert payload["aggregate_balance_summary"]["reached_final_4_count"] >= 0
     assert payload["aggregate_balance_summary"]["full_game_count"] >= 1
     assert payload["aggregate_balance_summary"]["node_count"] == (

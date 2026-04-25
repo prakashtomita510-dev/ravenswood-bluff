@@ -42,7 +42,13 @@ class OpenAIBackend(LLMBackend):
         self._model = os.getenv("DEFAULT_MODEL") or model
         self._api_key = api_key or os.getenv("OPENAI_API_KEY")
         self._base_url = base_url or os.getenv("OPENAI_BASE_URL")
+        self._embedding_api_key = os.getenv("EMBEDDING_API_KEY") or self._api_key
+        self._embedding_base_url = os.getenv("EMBEDDING_BASE_URL") or self._base_url
+        self._embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
         self._client = None
+        self._embedding_client = None
+        self._embeddings_disabled = False
+        self._embeddings_disable_reason: Optional[str] = None
 
     def _get_client(self):
         """懒加载 OpenAI 客户端"""
@@ -58,8 +64,25 @@ class OpenAIBackend(LLMBackend):
                 kwargs["api_key"] = self._api_key
             if self._base_url:
                 kwargs["base_url"] = self._base_url
-            self._client = AsyncOpenAI(**kwargs)
+            self._client = AsyncOpenAI(**kwargs, timeout=60.0)
         return self._client
+
+    def _get_embedding_client(self):
+        """懒加载 Embeddings 客户端，允许与聊天模型分离配置。"""
+        if self._embedding_client is None:
+            try:
+                from openai import AsyncOpenAI
+            except ImportError:
+                raise ImportError(
+                    "openai package is required. Install with: pip install openai"
+                )
+            kwargs = {}
+            if self._embedding_api_key:
+                kwargs["api_key"] = self._embedding_api_key
+            if self._embedding_base_url:
+                kwargs["base_url"] = self._embedding_base_url
+            self._embedding_client = AsyncOpenAI(**kwargs)
+        return self._embedding_client
 
     async def generate(
         self,
@@ -146,3 +169,66 @@ class OpenAIBackend(LLMBackend):
 
     def get_model_name(self) -> str:
         return self._model
+
+    @staticmethod
+    def _is_embedding_unsupported_error(error: Exception) -> bool:
+        status_code = getattr(error, "status_code", None)
+        if status_code == 404:
+            return True
+
+        message = str(error).lower()
+        unsupported_markers = (
+            "404",
+            "not found",
+            "embeddings",
+            "does not exist",
+            "unsupported",
+        )
+        return "embedding" in message and any(marker in message for marker in unsupported_markers)
+
+    async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
+        """通过 OpenAI API 获取向量嵌入"""
+        if not texts:
+            return []
+
+        if self._embeddings_disabled:
+            return []
+        
+        client = self._get_embedding_client()
+        logger.info(
+            "Generating embeddings for %s texts using %s (base_url=%s)",
+            len(texts),
+            self._embedding_model,
+            self._embedding_base_url,
+        )
+        try:
+            response = await client.embeddings.create(
+                model=self._embedding_model,
+                input=texts,
+                timeout=15.0
+            )
+            return [data.embedding for data in response.data]
+        except Exception as e:
+            if self._is_embedding_unsupported_error(e):
+                self._embeddings_disabled = True
+                self._embeddings_disable_reason = str(e)
+                logger.warning(
+                    "Embeddings endpoint/model is unavailable for base_url=%s model=%s; "
+                    "disabling embeddings and continuing without vector retrieval. reason=%s",
+                    self._embedding_base_url,
+                    self._embedding_model,
+                    e,
+                )
+                return []
+
+            logger.error(f"OpenAI Embeddings API error: {e}")
+            return []
+
+    def get_embedding_status(self) -> dict[str, object]:
+        """返回 embeddings 通道的轻量状态，供数据快照与调试使用。"""
+        return {
+            "enabled": not self._embeddings_disabled,
+            "model": self._embedding_model,
+            "base_url": self._embedding_base_url,
+            "disabled_reason": self._embeddings_disable_reason,
+        }

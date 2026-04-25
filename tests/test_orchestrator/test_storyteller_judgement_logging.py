@@ -10,6 +10,7 @@ import pytest
 
 from src.agents.base_agent import BaseAgent
 from src.agents import storyteller_agent as storyteller_module
+from src.content.trouble_brewing_night_order import build_night_order_tie_groups
 from src.llm.mock_backend import MockBackend
 from src.engine.roles.base_role import get_role_class
 from src.engine.roles.minions import SpyRole
@@ -644,3 +645,45 @@ async def test_storyteller_records_legacy_fallback_path_when_storyteller_info_us
     assert recent[-1]["adjudication_path"] == "storyteller_info.legacy_fallback"
     assert recent[-1]["bucket"] == "night_info.storyteller_info"
     _close_workspace_handlers(workspace)
+
+
+@pytest.mark.asyncio
+async def test_storyteller_build_night_order_records_canonical_reference_and_ties(monkeypatch):
+    workspace = Path.cwd() / "_storyteller_judgement_workspace"
+    workspace.mkdir(exist_ok=True)
+    monkeypatch.chdir(workspace)
+    module = importlib.reload(storyteller_module)
+    agent = module.StorytellerAgent(MockBackend())
+
+    state = GameState(
+        phase=GamePhase.NIGHT,
+        round_number=2,
+        players=(
+            PlayerState(player_id="b1", name="Butler", role_id="butler", team=Team.GOOD),
+            PlayerState(player_id="s1", name="Spy", role_id="spy", team=Team.EVIL),
+            PlayerState(player_id="p1", name="Poisoner", role_id="poisoner", team=Team.EVIL),
+        ),
+        seat_order=("b1", "s1", "p1"),
+    )
+
+    steps = await agent.build_night_order(state, GamePhase.NIGHT)
+    recent = agent.get_recent_judgements(5)
+
+    assert [step["player_id"] for step in steps] == ["p1", "b1"]
+    assert recent[-1]["category"] == "night_order"
+    assert recent[-1]["canonical_reference"] == "trouble_brewing_night_order"
+    assert recent[-1]["tie_groups"] == []
+    _close_workspace_handlers(workspace)
+
+
+def test_build_night_order_tie_groups_resolves_by_rulebook_order():
+    ties = build_night_order_tie_groups(
+        [
+            {"role_id": "spy", "night_order": 70},
+            {"role_id": "butler", "night_order": 70},
+        ]
+    )
+
+    assert ties
+    assert ties[0]["resolved_order"] == ["butler", "spy"]
+    assert ties[0]["resolution"] == "canonical_rolebook_then_seat_order"

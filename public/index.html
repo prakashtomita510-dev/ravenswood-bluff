@@ -729,6 +729,7 @@
         </div>
         <div style="display: flex; flex-direction: column; gap: 10px;">
             <button id="skipBtn" onclick="skipDiscussion()" style="background: var(--surface); color: white; display: none;">End Discussion</button>
+            <button id="slayerBtn" onclick="slayerShot()" style="background: var(--error); color: white; display: none;">Slayer Shot</button>
             <button id="submitBtn" onclick="sendAction()" disabled>Submit Action</button>
             <button id="chatBtn" onclick="sendQuickChat()" style="background: var(--surface); color: var(--secondary);">Chat</button>
         </div>
@@ -744,8 +745,14 @@
         <div class="modal" id="setupStep2" style="display: none;">
             <h2 id="ui-mode-choice">Choose Your Role</h2>
             <div style="margin-bottom: 20px; display: flex; flex-direction: column; gap: 15px;">
-                <button onclick="submitSetup('participate')" style="background: var(--primary);">Participate as Player</button>
-                <button onclick="submitSetup('observe')" style="background: var(--secondary);">Observe as Storyteller</button>
+                <button onclick="submitSetup('participate')" style="background: var(--primary);" id="ui-mode-play">Participate as Player</button>
+                <button onclick="submitSetup('observe')" style="background: var(--secondary);" id="ui-mode-observe">Observe as Storyteller</button>
+            </div>
+            <div id="storytellerOptions" style="margin-bottom: 20px; text-align: left; background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.85rem;">
+                    <input type="checkbox" id="delegateStoryteller" style="width: 18px; height: 18px; cursor: pointer;">
+                    <span id="ui-setup-delegate">AI Storyteller Delegation (Auto mode)</span>
+                </label>
             </div>
             <button onclick="prevSetupStep()" id="setupBackBtn" style="font-size: 0.8rem; background: none; color: #888;">Back</button>
         </div>
@@ -845,7 +852,10 @@
         let pendingActionContext = null;
         let players = [];
         let currentLang = 'zh';
-        let currentUserId = 'h1';
+        const PLAYER_ID_STORAGE_KEY = 'botc_player_id';
+        let currentUserId = localStorage.getItem(PLAYER_ID_STORAGE_KEY) || 'h1';
+        let hasRecoveredHistory = false;
+        let lastProcessedEventCount = 0;
         let roleCatalog = {};
         let currentGameId = null;
         let settlementShownFor = null;
@@ -895,6 +905,9 @@
                 end_discussion: "结束讨论",
                 submit_action: "提交行动",
                 content_placeholder: "输入内容...",
+                slayer_shot_btn: "发动猎手技能",
+                slayer_shot_prompt: "请选择你想要狙击的目标...",
+                slayer_confirm: "确定要对该玩家发动猎手技能吗？每局游戏仅限一次。",
                 action_required: "需要行动: {type}",
                 action_retry_prefix: "操作提示",
                 phase_setup: "准备阶段",
@@ -919,7 +932,8 @@
                 alert_connected: "连接成功！玩家ID: ",
                 error_setup: "配置失败，请检查范围 (5-15)",
                 mode_play: "参与游戏",
-                mode_observe: "旁观模式",
+                mode_observe: "旁观/说书人模式",
+                setup_delegate: "开启 AI 说书人托管 (自动判定信息)",
                 evil_chat: "【邪恶频道】",
                 evil_chat_label: "邪恶频道",
                 chat_btn: "发送消息",
@@ -1011,9 +1025,9 @@
                 // 角色翻译
                 role_washerwoman: "洗衣妇", role_librarian: "图书馆员", role_investigator: "调查员", role_chef: "厨师", role_empath: "共情者",
                 role_fortune_teller: "占卜师", role_undertaker: "送葬者", role_monk: "僧侣", role_ravenkeeper: "守鸦人",
-                role_virgin: "圣女", role_slayer: "杀手", role_soldier: "士兵", role_mayor: "市长",
-                role_butler: "管家", role_drunken: "酒鬼", role_recluse: "隐士", role_saint: "圣徒",
-                role_poisoner: "投毒者", role_spy: "间谍", role_scarlet_woman: "绯红女郎", role_baron: "男爵",
+                role_virgin: "贞洁者", role_slayer: "猎手", role_soldier: "士兵", role_mayor: "镇长",
+                role_butler: "管家", role_drunken: "酒鬼", role_recluse: "陌客", role_saint: "圣徒",
+                role_poisoner: "投毒者", role_spy: "间谍", role_scarlet_woman: "红唇女郎", role_baron: "男爵",
                 role_imp: "小恶魔",
                 // 结算界面
                 settlement_title_default: "🏆 游戏结束",
@@ -1043,6 +1057,9 @@
                 end_discussion: "End Discussion",
                 submit_action: "Submit Action",
                 content_placeholder: "Type something...",
+                slayer_shot_btn: "Slayer Shot",
+                slayer_shot_prompt: "Select target to shoot...",
+                slayer_confirm: "Are you sure you want to use your Slayer shot on this player? Once per game.",
                 action_required: "Action Required: {type}",
                 action_retry_prefix: "Action hint",
                 phase_setup: "SETUP",
@@ -1067,7 +1084,8 @@
                 alert_connected: "Connected as ",
                 error_setup: "Setup failed. Check range (5-15)",
                 mode_play: "Participate",
-                mode_observe: "Observe",
+                mode_observe: "Storyteller Mode",
+                setup_delegate: "AI Storyteller Delegation (Auto mode)",
                 evil_chat: "[Evil Channel]",
                 evil_chat_label: "Evil Chat",
                 chat_btn: "Chat",
@@ -1254,6 +1272,9 @@
             document.getElementById('ui-nomination-history-title').textContent = t('nomination_history_title');
             document.getElementById('ui-private-info-title').textContent = t('private_info_title');
             document.getElementById('grimoireBtn').textContent = t('grimoire_btn');
+            document.getElementById('ui-mode-play').textContent = t('mode_play');
+            document.getElementById('ui-mode-observe').textContent = t('mode_observe');
+            document.getElementById('ui-setup-delegate').textContent = t('setup_delegate');
             document.getElementById('ui-evil-chat-label').textContent = t('evil_chat_label');
             document.getElementById('history-title').textContent = `📚 ${t('history_title')}`;
             document.getElementById('history-subtitle').textContent = t('history_subtitle');
@@ -1318,14 +1339,14 @@
             pendingActionType = null;
             pendingActionContext = null;
             gameState = buildEmptyGameState(nextGameId);
-            const logBox = document.getElementById('logBox');
-            if (logBox) {
-                logBox.innerHTML = '';
-            }
+            const chatBox = document.getElementById('logBox');
+            if (chatBox) chatBox.innerHTML = '';
             const privateInfoList = document.getElementById('privateInfoList');
             if (privateInfoList) {
                 privateInfoList.innerHTML = '';
             }
+            hasRecoveredHistory = false; // 允许重新从新对局恢复历史记录
+            lastProcessedEventCount = 0;
             resetSetupOverlay();
             updateStatusTabAttention();
             closeSettlementOverlay();
@@ -1665,10 +1686,14 @@
 
         function logMessage(text, type = 'system', senderName = '') {
             const box = document.getElementById('logBox');
+            if (!box) return;
             const div = document.createElement('div');
             div.className = `msg-bubble ${type}-msg`;
-            if (senderName) div.innerHTML = `<strong style="color: var(--primary)">${senderName}:</strong> ${text}`;
-            else div.textContent = text;
+            if (senderName) {
+                div.innerHTML = `<strong style="color: var(--primary)">${senderName}:</strong> ${text}`;
+            } else {
+                div.innerHTML = text; // 改为 innerHTML 以支持 HTML 标签
+            }
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
         }
@@ -1800,6 +1825,24 @@
                 renderNominationState();
                 renderPrivateInfo();
 
+                // 状态恢复与增量事件处理
+                if (data.event_log && Array.isArray(data.event_log)) {
+                    if (!hasRecoveredHistory) {
+                        // 首次加载或重置后：重建历史
+                        const box = document.getElementById('logBox');
+                        if (box) box.innerHTML = '';
+                        data.event_log.forEach(e => handleEventUpdate(e, true));
+                        lastProcessedEventCount = data.event_log.length;
+                        hasRecoveredHistory = true;
+                    } else if (data.event_log.length > lastProcessedEventCount) {
+                        // 增量更新：仅处理新出的事件
+                        for (let i = lastProcessedEventCount; i < data.event_log.length; i++) {
+                            handleEventUpdate(data.event_log[i], false);
+                        }
+                        lastProcessedEventCount = data.event_log.length;
+                    }
+                }
+
                 // 结算检测
                 if (gameState.phase === 'game_over' && settlementShownFor !== gameState.game_id) {
                     fetchAndShowSettlement();
@@ -1807,7 +1850,9 @@
                     closeSettlementOverlay();
                     settlementShownFor = null;
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.error("fetchGameState error:", e);
+            }
         }
 
         async function refreshRoleCatalog() {
@@ -1824,7 +1869,7 @@
             return `${gameKey}:${gameState.day_number}:${round}`;
         }
 
-        function handleEventUpdate(e) {
+        function handleEventUpdate(e, isRecovery = false) {
             if (e?.game_id && currentGameId && e.game_id !== currentGameId) {
                 return;
             }
@@ -1860,20 +1905,39 @@
                     ? t('death_announcement_reason', { target: playerName(e.target), reason: reasonText })
                     : t('death_announcement', { target: playerName(e.target) }));
             } else if (e.event_type === 'private_info_delivered') {
-                const lines = Array.isArray(e.payload.lines) ? e.payload.lines.join(' / ') : '';
-                logMessage(`${t('private_info_received', { title: e.payload.title || e.payload.type || 'Info' })}${lines ? ' ' + lines : ''}`);
-                const nextInfo = gameState.private_info || [];
-                if (!nextInfo.some((item) => item.trace_id === e.trace_id)) {
-                    gameState.private_info = [...nextInfo, { trace_id: e.trace_id, payload: e.payload }];
-                    renderPrivateInfo();
-                    statusAttention = true;
-                    updateStatusTabAttention();
+                if (!isRecovery) {
+                    const lines = Array.isArray(e.payload.lines) ? e.payload.lines.join(' / ') : '';
+                    const title = e.payload.title || e.payload.type || 'Info';
+                    if (gameState.viewer_mode === 'storyteller') {
+                        logMessage(`<span style="color:var(--accent)">[${playerName(e.target)}] ${t('private_info_title')}: ${title}</span>${lines ? ' — ' + lines : ''}`);
+                    } else {
+                        logMessage(`${t('private_info_received', { title: title })}${lines ? ' ' + lines : ''}`);
+                    }
+                    const nextInfo = gameState.private_info || [];
+                    if (!nextInfo.some((item) => item.trace_id === e.trace_id)) {
+                        gameState.private_info = [...nextInfo, { trace_id: e.trace_id, payload: e.payload }];
+                        renderPrivateInfo();
+                        statusAttention = true;
+                        updateStatusTabAttention();
+                    }
                 }
+            } else if (e.event_type === 'slayer_shot_announced') {
+                logMessage(`<strong style="color:var(--error)">🏹 ${e.payload?.message || `${playerName(e.actor)} used Slayer shot!`}</strong>`);
+            } else if (e.event_type === 'slayer_shot') {
+                if (e.payload?.success) {
+                    logMessage(`<strong style="color:var(--error)">💥 命中！目标是恶魔！</strong>`);
+                } else {
+                    logMessage(`<span style="color:#aaa">💨 未命中。目标不是恶魔。</span>`);
+                }
+            } else if (e.event_type === 'role_transfer') {
+                logMessage(`<strong style="color:var(--error)">🔄 角色转移 (Star-pass): ${playerName(e.actor)} 将身份传给了 ${playerName(e.target)}!</strong>`);
             }
         }
 
         function connect() {
             currentUserId = document.getElementById('playerId').value.trim();
+            localStorage.setItem(PLAYER_ID_STORAGE_KEY, currentUserId);
+            hasRecoveredHistory = false; // 重启连接或刷新时允许重新恢复历史记录
             if (!currentUserId) {
                 logMessage(currentLang === 'zh' ? '请输入玩家 ID 后再加入。' : 'Enter a player ID before joining.');
                 document.getElementById('status-text').textContent = currentLang === 'zh' ? '缺少玩家 ID' : 'Missing player ID';
@@ -1957,6 +2021,7 @@
         async function submitSetup(mode) {
             const count = parseInt(document.getElementById('playerCountInput').value);
             const humanMode = mode === 'observe' ? 'storyteller' : 'player';
+            const delegated = document.getElementById('delegateStoryteller').checked;
             
             try {
                 const res = await fetch(`${backendHttpOrigin()}/api/game/setup`, {
@@ -1967,7 +2032,8 @@
                         host_id: currentUserId,
                         human_mode: humanMode,
                         human_client_id: humanMode === 'player' ? currentUserId : null,
-                        storyteller_client_id: humanMode === 'storyteller' ? currentUserId : null
+                        storyteller_client_id: humanMode === 'storyteller' ? currentUserId : null,
+                        storyteller_delegated: delegated
                     })
                 });
                 if (res.ok) {
@@ -2184,6 +2250,8 @@
             const winner = settlement.winning_team === 'good' ? t('settlement_winner_good') : t('settlement_winner_evil');
             const players = Array.isArray(data.players) ? data.players : [];
             const timeline = Array.isArray(settlement.timeline) ? settlement.timeline : [];
+            const storytellerJudgements = data.storyteller_judgements || {};
+            const judgementSummary = Array.isArray(storytellerJudgements.recent_summary) ? storytellerJudgements.recent_summary : [];
 
             detail.innerHTML = `
                 <div class="history-summary-grid">
@@ -2201,6 +2269,10 @@
                 <div>
                     <h3 style="margin:0 0 10px 0;">${t('history_timeline')}</h3>
                     <div id="historyTimelineBox" class="settlement-timeline"></div>
+                </div>
+                <div>
+                    <h3 style="margin:0 0 10px 0;">说书人裁量摘要</h3>
+                    <div id="historyJudgementBox" class="settlement-timeline"></div>
                 </div>
             `;
 
@@ -2232,6 +2304,30 @@
                     </div>
                 `;
                 timelineBox.appendChild(item);
+            });
+
+            const judgementBox = document.getElementById('historyJudgementBox');
+            if (!judgementSummary.length) {
+                const judgementCount = storytellerJudgements.judgement_count || 0;
+                judgementBox.innerHTML = `<div style="opacity:0.72;">${judgementCount ? `共 ${judgementCount} 条裁量记录，当前无摘要。` : '该局暂无说书人裁量摘要。'}</div>`;
+                return;
+            }
+            judgementSummary.forEach((entry) => {
+                const item = document.createElement('div');
+                item.className = 'timeline-event';
+                const heading = [entry.category, entry.bucket].filter(Boolean).join(' / ') || 'judgement';
+                const meta = [entry.phase, entry.day_number ? `D${entry.day_number}` : '', entry.round_number ? `R${entry.round_number}` : '']
+                    .filter(Boolean)
+                    .join(' · ');
+                item.innerHTML = `
+                    <span class="event-icon">◆</span>
+                    <div class="event-text">
+                        <small style="opacity:0.6">${heading}${meta ? ` · ${meta}` : ''}</small>
+                        <div><strong>${entry.decision || entry.summary || '-'}</strong></div>
+                        <div style="opacity:0.78;">${entry.reason || entry.summary || '-'}</div>
+                    </div>
+                `;
+                judgementBox.appendChild(item);
             });
         }
 
@@ -2286,6 +2382,10 @@
             
             document.getElementById('voteSelect').style.display = (type === 'vote') ? 'block' : 'none';
             document.getElementById('skipBtn').style.display = (type === 'speak') ? 'block' : 'none';
+            document.getElementById('slayerBtn').style.display = (context?.can_slayer_shot) ? 'block' : 'none';
+            if (context?.can_slayer_shot) {
+                document.getElementById('action-target-container').style.display = 'block';
+            }
             if (type === 'defense_speech') {
                 logMessage(t('defense_prompt'));
             } else if (type === 'nominate' || type === 'nomination_intent') {
@@ -2313,6 +2413,25 @@
         function skipDiscussion() {
             if (!ws) return;
             ws.send(JSON.stringify({ type: "action_response", payload: { action: "skip_discussion" } }));
+            clearActionState();
+        }
+
+        function slayerShot() {
+            const selectors = document.querySelectorAll('.target-selector');
+            const targets = Array.from(selectors).map(s => s.value).filter(v => v !== "" && v !== "not_nominating");
+            if (targets.length === 0) {
+                logMessage(t('slayer_shot_prompt'));
+                return;
+            }
+            if (!confirm(t('slayer_confirm'))) return;
+            
+            ws.send(JSON.stringify({
+                type: "action_response",
+                payload: {
+                    action: "slayer_shot",
+                    target: targets[0]
+                }
+            }));
             clearActionState();
         }
 
@@ -2475,20 +2594,70 @@
                     </table>
                 `;
             } else if (tab === 'flow') {
-                content.innerHTML = `
-                    <ol style="line-height: 1.8;">
-                        <li><strong>SETUP</strong>: Seating and roles distributed.</li>
-                        <li><strong>FIRST NIGHT</strong>: Minions and Demon meet; roles get initial info.</li>
-                        <li><strong>DAY DISCUSSION</strong>: Talk and build trust.</li>
-                        <li><strong>NOMINATION</strong>: Accuse others.</li>
-                        <li><strong>VOTING</strong>: Reach a majority to execute.</li>
-                        <li><strong>NIGHT</strong>: Characters use abilities; Demon kills.</li>
-                    </ol>
+                const res = await fetch(`${backendHttpOrigin()}/api/game/night-order`);
+                const data = await res.json();
+                const entries = Array.isArray(data.entries) ? data.entries : [];
+                const zh = currentLang === 'zh';
+                const timingLabel = (timing) => {
+                    const zhMap = {
+                        first_night: '首夜',
+                        each_night: '每夜',
+                        each_night_except_first: '除首夜外每夜',
+                        on_death: '夜晚死亡触发',
+                        special_reaction: '特殊触发',
+                    };
+                    const enMap = {
+                        first_night: 'First night',
+                        each_night: 'Each night',
+                        each_night_except_first: 'Each night except first',
+                        on_death: 'Night death trigger',
+                        special_reaction: 'Special trigger',
+                    };
+                    return (zh ? zhMap : enMap)[timing] || timing;
+                };
+                let html = `
+                    <div style="display:grid; gap: 14px;">
+                        <div style="padding: 12px; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background: rgba(255,255,255,0.03);">
+                            <strong>${zh ? '标准流程' : 'Core flow'}</strong>
+                            <ol style="line-height: 1.8; margin: 10px 0 0 18px;">
+                                <li><strong>SETUP</strong>: ${zh ? '座位与身份分发。' : 'Seating and roles are distributed.'}</li>
+                                <li><strong>FIRST NIGHT</strong>: ${zh ? '首夜按固定夜晚顺序依次结算。' : 'The first night resolves in fixed night order.'}</li>
+                                <li><strong>DAY DISCUSSION</strong>: ${zh ? '白天讨论、建立信任或怀疑。' : 'Players discuss and build trust or suspicion.'}</li>
+                                <li><strong>NOMINATION</strong>: ${zh ? '发起提名并进入防御与投票。' : 'Nominate a player and enter defense plus voting.'}</li>
+                                <li><strong>VOTING</strong>: ${zh ? '达到多数则执行。' : 'A majority leads to execution.'}</li>
+                                <li><strong>NIGHT</strong>: ${zh ? '夜晚再次按固定顺序结算能力。' : 'Night abilities resolve again in fixed order.'}</li>
+                            </ol>
+                        </div>
+                        <div style="padding: 12px; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background: rgba(255,255,255,0.03);">
+                            <strong>${zh ? 'Trouble Brewing 夜晚顺序' : 'Trouble Brewing night order'}</strong>
+                            <div style="opacity: 0.75; margin-top: 6px;">${zh ? data.tie_strategy : 'Tied slots are resolved by rulebook order first, then seat order.'}</div>
+                            <div style="display:grid; gap:10px; margin-top:12px;">
                 `;
+                entries.forEach((entry) => {
+                    html += `
+                        <div style="padding:10px 12px; border-radius:10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                            <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+                                <strong>${entry.sort_order}. ${zh ? entry.zh_name : entry.en_name}</strong>
+                                <span style="font-size:0.8rem; color: var(--secondary);">${timingLabel(entry.timing)}</span>
+                            </div>
+                            <div style="margin-top:6px; opacity:0.8;">${zh ? entry.note_zh : entry.note_en}</div>
+                        </div>
+                    `;
+                });
+                html += `
+                            </div>
+                        </div>
+                    </div>
+                `;
+                content.innerHTML = html;
             }
         }
 
         // Init
+        const savedPlayerId = localStorage.getItem(PLAYER_ID_STORAGE_KEY);
+        if (savedPlayerId) {
+            document.getElementById('playerId').value = savedPlayerId;
+        }
         updateUIStrings();
         clearActionState();
     </script>

@@ -95,8 +95,22 @@ class ImpRole(BaseRole):
         protected = PlayerStatus.PROTECTED in target_player.statuses
         soldier_cls = get_role_class("soldier")
         soldier_safe = bool(soldier_cls and soldier_cls.is_immune_to_demon(target_player))
+        
         if target != actor.player_id and (protected or soldier_safe):
-            return game_state, []
+            fail_event = GameEvent(
+                event_type="night_kill",
+                phase=GamePhase.NIGHT,
+                round_number=game_state.round_number,
+                actor=actor.player_id,
+                target=target,
+                visibility=Visibility.STORYTELLER_ONLY,
+                payload={
+                    "failed": True, 
+                    "reason": "protected" if protected else "soldier_safe",
+                    "killer_role": "imp"
+                },
+            )
+            return game_state.with_event(fail_event), [fail_event]
 
         actual_target = target
         mayor_cls = get_role_class("mayor")
@@ -135,12 +149,14 @@ class ImpRole(BaseRole):
                 replacement_reason = "imp_suicide"
 
             if replacement:
+                # [GAME-3.3] 新恶魔保留原有的公开伪装身份（perceived_role_id），不暴露为 imp
+                old_perceived = replacement.perceived_role_id or replacement.fake_role or replacement.role_id
                 new_state = new_state.with_player_update(
                     replacement.player_id,
                     role_id="imp",
                     team=Team.EVIL,
                     true_role_id="imp",
-                    perceived_role_id="imp",
+                    perceived_role_id=old_perceived,  # 保持公开伪装
                     current_team=Team.EVIL,
                     storyteller_notes=replacement.storyteller_notes + ("role_transferred_to_imp",),
                 )
@@ -151,7 +167,12 @@ class ImpRole(BaseRole):
                     actor=actor.player_id,
                     target=replacement.player_id,
                     visibility=Visibility.STORYTELLER_ONLY,
-                    payload={"new_role": "imp", "reason": replacement_reason},
+                    payload={
+                        "new_role": "imp",
+                        "reason": replacement_reason,
+                        "old_perceived_role": old_perceived,
+                        "bluffs": list(game_state.bluffs) if game_state.bluffs else [],
+                    },
                 )
                 events.append(transfer_event)
                 new_state = new_state.with_event(transfer_event)

@@ -143,3 +143,94 @@ async def test_game_record_store_recovers_from_disk_io_error(monkeypatch):
                 fallback_path.unlink()
             except PermissionError:
                 pass
+
+
+@pytest.mark.asyncio
+async def test_game_record_store_exports_history_and_storyteller_judgements_by_game_id():
+    from src.agents.storyteller_agent import StorytellerAgent
+
+    store = GameRecordStore(_memory_db_uri("game_record_export_test"))
+    try:
+        game_id = "game-export-1"
+        state = _state(game_id)
+        settlement = _settlement(game_id, "good")
+        storyteller = StorytellerAgent()
+        storyteller.record_judgement(
+            "night_info",
+            decision="deliver",
+            phase="night",
+            round_number=2,
+            bucket="night_info.storyteller_info",
+            player_id="p1",
+        )
+
+        await store.save_game(game_id, state, settlement)
+        payload = await store.export_game_assets(game_id, storyteller)
+
+        assert payload is not None
+        assert payload["game_id"] == game_id
+        assert payload["game_history"]["game_id"] == game_id
+        assert payload["storyteller_judgements"]["game_id"] == game_id
+        assert payload["storyteller_judgements"]["judgement_count"] == 1
+        assert payload["storyteller_judgements"]["judgements"][0]["game_id"] == game_id
+    finally:
+        await store.close()
+
+
+@pytest.mark.asyncio
+async def test_game_record_store_exports_settlement_judgement_summary_without_live_storyteller():
+    store = GameRecordStore(_memory_db_uri("game_record_export_summary_test"))
+    try:
+        game_id = "game-export-summary"
+        state = _state(game_id)
+        settlement = _settlement(game_id, "good")
+        settlement["judgement_summary"] = [
+            {
+                "category": "night_info",
+                "decision": "deliver",
+                "reason": "fortune_teller_result",
+                "summary": "player_id=p1",
+            }
+        ]
+
+        await store.save_game(game_id, state, settlement)
+        payload = await store.export_game_assets(game_id, storyteller_agent=None)
+
+        assert payload is not None
+        assert payload["storyteller_judgements"]["game_id"] == game_id
+        assert payload["storyteller_judgements"]["judgement_count"] == 1
+        assert payload["storyteller_judgements"]["recent_summary"][0]["category"] == "night_info"
+    finally:
+        await store.close()
+
+
+@pytest.mark.asyncio
+async def test_game_record_store_exports_history_detail_with_storyteller_judgements():
+    store = GameRecordStore(_memory_db_uri("game_record_history_detail_test"))
+    try:
+        game_id = "history-detail-export"
+        state = _state(game_id)
+        settlement = _settlement(game_id, "good")
+        settlement["judgement_summary"] = [
+            {
+                "category": "night_info",
+                "bucket": "night_info.fixed_info",
+                "decision": "deliver",
+                "reason": "chef_info",
+                "phase": "first_night",
+                "day_number": 1,
+                "round_number": 1,
+                "summary": "player_id=p1",
+            }
+        ]
+
+        await store.save_game(game_id, state, settlement)
+        detail = await store.export_history_detail(game_id, storyteller_agent=None)
+
+        assert detail is not None
+        assert detail["game_id"] == game_id
+        assert detail["storyteller_judgements"]["game_id"] == game_id
+        assert detail["storyteller_judgements"]["judgement_count"] == 1
+        assert detail["storyteller_judgements"]["recent_summary"][0]["bucket"] == "night_info.fixed_info"
+    finally:
+        await store.close()

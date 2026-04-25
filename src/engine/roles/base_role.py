@@ -115,9 +115,9 @@ class BaseRole(ABC):
             # 除首夜(Round 1, Day 0)外的夜晚 (通常是 Round 2, Day 1 及以后)
             # 或者是针对 EACH_NIGHT_EXCEPT_FIRST 触发器
             if game_state.round_number > 1:
-                return trigger in (AbilityTrigger.EACH_NIGHT, AbilityTrigger.EACH_NIGHT_EXCEPT_FIRST)
+                return trigger in (AbilityTrigger.EACH_NIGHT, AbilityTrigger.EACH_NIGHT_EXCEPT_FIRST, AbilityTrigger.ON_DEATH)
             # 首个夜晚(Round 1)已经用 FIRST_NIGHT 覆盖了，NIGHT 里的 EACH_NIGHT 也应在后续生效
-            return trigger == AbilityTrigger.EACH_NIGHT
+            return trigger in (AbilityTrigger.EACH_NIGHT, AbilityTrigger.ON_DEATH)
             
         return False
 

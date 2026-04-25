@@ -80,5 +80,18 @@ class LLMBackend(ABC):
         """获取当前使用的模型名称"""
         ...
 
+    @abstractmethod
+    async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
+        """
+        获取文本的向量表示。
+
+        Args:
+            texts: 需要向量化的文本列表
+
+        Returns:
+            list[list[float]]: 向量列表
+        """
+        ...
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(model={self.get_model_name()})"

@@ -55,7 +55,20 @@ class WorkingMemory:
     一般在阶段转换（例如白天进入夜晚）时，会被总结并归档到短期记忆/长期记忆中，然后清空。
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        observation_limit: int = 30,
+        fact_limit: int = 20,
+        internal_thought_limit: int = 5,
+        impression_limit: int = 5,
+        storage_limit: int = 40
+    ) -> None:
+        self.observation_limit = observation_limit
+        self.fact_limit = fact_limit
+        self.internal_thought_limit = internal_thought_limit
+        self.impression_limit = impression_limit
+        self.storage_limit = storage_limit
+
         self.observations: list[Observation] = []
         # 最近的自我内部思考
         self.internal_thoughts: list[str] = []
@@ -88,7 +101,7 @@ class WorkingMemory:
         if fact in self.anchor_facts:
             self.anchor_facts.remove(fact)
         self.anchor_facts.append(fact)
-        self.anchor_facts = self.anchor_facts[-20:]
+        self.anchor_facts = self.anchor_facts[-self.fact_limit:]
         self.remember_public_info("public_fact", fact)
 
     def _remember_memory_fact(
@@ -118,7 +131,7 @@ class WorkingMemory:
             if not (existing.category == item.category and existing.summary == item.summary)
         ]
         storage.append(item)
-        del storage[:-20]
+        del storage[:-self.storage_limit]
 
     def _storage_for_tier(self, tier: MemoryTier) -> list[MemoryFact]:
         tier_value = tier.value if isinstance(tier, MemoryTier) else str(tier)
@@ -206,19 +219,20 @@ class WorkingMemory:
         同时保留最近的 internal_thoughts 以维持思考连贯性。
         """
         self.observations = [summary_observation]
-        # 思考一般不建议完全清空，保留最近的 2 条
-        self.internal_thoughts = self.internal_thoughts[-2:]
+        # 思考一般不建议完全清空，保留最近的限制条数
+        self.internal_thoughts = self.internal_thoughts[-self.internal_thought_limit:]
 
-    def get_recent_context(self, limit: int = 20) -> str:
+    def get_recent_context(self, limit: int | None = None) -> str:
         """
         获取最近的上下文，渲染为文本以供LLM读取
         """
+        context_limit = limit or self.observation_limit
         context_parts = []
         
         # 0. 绝对可信信息层
         if self.objective_memory:
             context_parts.append("【你确认掌握的绝对客观事实】")
-            for item in self.objective_memory[-6:]:
+            for item in self.objective_memory[-self.fact_limit:]:
                 marker = ""
                 if item.day_number is not None or item.round_number is not None:
                     marker = f"(D{item.day_number or '-'}R{item.round_number or '-'}) "
@@ -228,7 +242,7 @@ class WorkingMemory:
         # 1. 高可信私密信息层
         if self.high_confidence_memory:
             context_parts.append("【你确认掌握的高可信私密信息】")
-            for item in self.high_confidence_memory[-6:]:
+            for item in self.high_confidence_memory[-self.fact_limit:]:
                 marker = ""
                 if item.day_number is not None or item.round_number is not None:
                     marker = f"(D{item.day_number or '-'}R{item.round_number or '-'}) "
@@ -238,7 +252,7 @@ class WorkingMemory:
         # 2. 公开信息层
         if self.public_fact_memory:
             context_parts.append("【公开场上的普通信息】")
-            for item in self.public_fact_memory[-6:]:
+            for item in self.public_fact_memory[-self.fact_limit:]:
                 marker = ""
                 if item.day_number is not None or item.round_number is not None:
                     marker = f"(D{item.day_number or '-'}R{item.round_number or '-'}) "
@@ -248,26 +262,26 @@ class WorkingMemory:
         # 3. 提取提炼后的印象 (Impressions Layer)
         if self.anchor_facts:
             context_parts.append("【你确认记住的关键事实】")
-            for fact in self.anchor_facts[-8:]:
+            for fact in self.anchor_facts[-self.fact_limit:]:
                 context_parts.append(f"- {fact}")
             context_parts.append("")
 
         if self.impressions:
             context_parts.append("【此前你对场面的总体印象与画像】")
-            # 只显示最近的 3 条印象
-            for imp in self.impressions[-3:]:
+            # 只显示最近的印象
+            for imp in self.impressions[-self.impression_limit:]:
                 context_parts.append(f"- {imp}")
             context_parts.append("")
 
         # 4. 提取最近的观察
-        recent_obs = self.observations[-limit:]
+        recent_obs = self.observations[-context_limit:]
         if recent_obs:
             context_parts.append("【最近看见/听到的事情】")
             for obs in recent_obs:
                 context_parts.append(f"- {obs.content}")
 
         # 5. 提取最近的思考
-        recent_thts = self.internal_thoughts[-5:]
+        recent_thts = self.internal_thoughts[-self.internal_thought_limit:]
         if recent_thts:
             context_parts.append("\n【你刚才的内部推理】")
             for tht in recent_thts:

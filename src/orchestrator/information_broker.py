@@ -16,6 +16,7 @@ from src.state.game_state import (
     AgentActionLegalContext,
     AgentVisibleState,
     GameEvent,
+    GamePhase,
     GameState,
     PrivatePlayerView,
     Team,
@@ -147,7 +148,9 @@ class InformationBroker:
         # 动态获取角色行动要求
         required_targets = 1
         can_target_self = False
+        can_slayer_shot = False
         from src.engine.roles.base_role import get_role_class
+        from src.engine.roles.townsfolk import SlayerRole
         player = game_state.get_player(player_id)
         if player:
             role_cls = get_role_class(player.role_id)
@@ -155,6 +158,12 @@ class InformationBroker:
                 role_instance = role_cls()
                 required_targets = role_instance.get_required_targets(game_state, game_state.phase)
                 can_target_self = role_instance.can_target_self()
+                
+                # Slayer 特殊处理
+                if player.role_id == "slayer":
+                    if game_state.phase in (GamePhase.DAY_DISCUSSION, GamePhase.NOMINATION):
+                        if not SlayerRole.has_used_shot(player):
+                            can_slayer_shot = True
 
         return AgentActionLegalContext(
             legal_nomination_targets=tuple(nomination_targets),
@@ -163,6 +172,7 @@ class InformationBroker:
             remaining_voters=tuple(remaining_voters),
             required_targets=required_targets,
             can_target_self=can_target_self,
+            can_slayer_shot=can_slayer_shot,
         )
 
     async def broadcast_event(self, event: GameEvent, game_state: GameState) -> None:

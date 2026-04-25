@@ -386,6 +386,64 @@ class GameRecordStore:
 
         return record
 
+    async def export_game_history(self, game_id: str) -> Optional[dict[str, Any]]:
+        """[A3-DATA-4] 导出完整对局历史数据（提供统一的导出接口命名）。"""
+        return await self.get_game(game_id)
+
+    async def export_storyteller_judgements(self, game_id: str, storyteller_agent: Any) -> Optional[dict[str, Any]]:
+        """[A3-DATA-4] 导出与 game_id 对齐的说书人判决数据。"""
+        history = await self.get_game(game_id)
+        if history is None:
+            return None
+        if storyteller_agent is None:
+            settlement = history.get("settlement", {}) if isinstance(history, dict) else {}
+            summary = settlement.get("judgement_summary", []) if isinstance(settlement, dict) else []
+            return {
+                "game_id": game_id,
+                "judgement_count": len(summary),
+                "categories": sorted(
+                    {str(item.get("category", "")) for item in summary if isinstance(item, dict) and item.get("category")}
+                ),
+                "buckets": [],
+                "judgements": [],
+                "recent_summary": list(summary),
+            }
+        if hasattr(storyteller_agent, "export_judgement_history"):
+            return storyteller_agent.export_judgement_history(game_id)
+        exported = storyteller_agent.export_judgements() if hasattr(storyteller_agent, "export_judgements") else []
+        return {
+            "game_id": game_id,
+            "judgement_count": len(exported),
+            "categories": sorted({str(item.get("category", "")) for item in exported if item.get("category")}),
+            "buckets": sorted({str(item.get("bucket", "")) for item in exported if item.get("bucket")}),
+            "judgements": [{"game_id": game_id, **item} for item in exported],
+            "recent_summary": [],
+        }
+
+    async def export_game_assets(self, game_id: str, storyteller_agent: Any | None = None) -> Optional[dict[str, Any]]:
+        """[A3-DATA-4] 最小统一导出接口：按 game_id 汇总对局历史与说书人判决。"""
+        game_history = await self.export_game_history(game_id)
+        if game_history is None:
+            return None
+        storyteller_judgements = await self.export_storyteller_judgements(game_id, storyteller_agent)
+        return {
+            "game_id": game_id,
+            "game_history": game_history,
+            "storyteller_judgements": storyteller_judgements,
+        }
+
+    async def export_history_detail(self, game_id: str, storyteller_agent: Any | None = None) -> Optional[dict[str, Any]]:
+        """[A3-ST-4] 历史详情统一资产：结算详情 + 说书人裁量摘要。"""
+        assets = await self.export_game_assets(game_id, storyteller_agent=storyteller_agent)
+        if assets is None:
+            return None
+        game_history = assets["game_history"]
+        storyteller_judgements = assets["storyteller_judgements"]
+        return {
+            **game_history,
+            "storyteller_judgements": storyteller_judgements,
+        }
+
     async def list_games(
         self, limit: int = 20, offset: int = 0
     ) -> list[dict[str, Any]]:

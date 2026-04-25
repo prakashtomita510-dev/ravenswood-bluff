@@ -138,7 +138,7 @@ class SpyRole(BaseRole):
 
 @register_role("scarlet_woman")
 class ScarletWomanRole(BaseRole):
-    """绯红女郎: 如果恶魔死亡且场上有5名或更多存活玩家，你将成为新的恶魔"""
+    """红唇女郎: 如果恶魔死亡且场上有5名或更多存活玩家，你将成为新的恶魔"""
 
     @classmethod
     def can_replace_demon(cls, game_state: GameState) -> bool:
@@ -205,7 +205,7 @@ class ScarletWomanRole(BaseRole):
     def get_definition() -> RoleDefinition:
         return RoleDefinition(
             role_id="scarlet_woman",
-            name="绯红女郎",
+            name="红唇女郎",
             name_en="Scarlet Woman",
             team=Team.EVIL,
             role_type=RoleType.MINION,

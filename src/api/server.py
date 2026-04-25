@@ -45,8 +45,10 @@ from fastapi.responses import RedirectResponse
 
 from src.agents.human_agent import HumanAgent
 from src.content.trouble_brewing_terms import get_role_name, get_role_term
+from src.content.trouble_brewing_night_order import export_rulebook_night_order
 from src.orchestrator.game_loop import GameOrchestrator
 from src.state.game_state import GameState, PlayerState, Team, GamePhase
+from src.state.event_log import Visibility
 
 # Configure logging
 # Moved to top level
@@ -120,7 +122,7 @@ def build_fresh_orchestrator(force_backend_mode: str | None = None) -> GameOrche
     global global_storyteller
 
     backend, backend_mode = build_backend(force_backend_mode)
-    global_storyteller = StorytellerAgent(backend)
+    global_storyteller = StorytellerAgent(mode="auto", backend=backend)
     state = GameState(
         phase=GamePhase.SETUP,
         players=(
@@ -130,6 +132,8 @@ def build_fresh_orchestrator(force_backend_mode: str | None = None) -> GameOrche
     orchestrator = GameOrchestrator(state)
     orchestrator.storyteller_agent = global_storyteller
     orchestrator.default_agent_backend = backend
+    # 初始化魔典快照
+    orchestrator._update_grimoire()
     logger.info("Initialized orchestrator with backend_mode=%s", backend_mode)
     return orchestrator
 
@@ -206,19 +210,96 @@ def collect_metrics(orchestrator: GameOrchestrator) -> dict[str, Any]:
         "nomination_attempts": len(nomination_attempted),
         "legal_nominations": len(nominations),
         "vote_counts": len(votes),
+        "judgements": orchestrator.storyteller_agent.get_recent_judgements(limit=40) if orchestrator.storyteller_agent else [],
         "latest_execution": last_execution,
+        "storyteller_delegated": getattr(orchestrator.storyteller_agent, "delegated", False) if orchestrator.storyteller_agent else False,
+        "storyteller_mode": getattr(orchestrator.storyteller_agent, "mode", "manual") if orchestrator.storyteller_agent else "manual",
     }
 
 
 def resolve_viewer_mode(orchestrator: GameOrchestrator, player_id: str | None) -> str:
     config = orchestrator.state.config
-    if not config or not player_id:
+    # 如果尚未配置，且 player_id 是 h1 (默认 Host)，则临时授予说书人权限
+    if not config:
+        if player_id == "h1":
+            return "storyteller"
         return "observer"
+    
+    if not player_id:
+        return "observer"
+        
+    # 后门/固定 ID 支持，确保控制台始终可用
+    if player_id in ["h1", "storyteller", "admin"]:
+        return "storyteller"
+        
     if config.storyteller_client_id and player_id == config.storyteller_client_id:
         return "storyteller"
     if config.human_mode == "player" and config.human_client_id == player_id:
         return "player"
     return "observer"
+
+def filter_chat_history(orchestrator: GameOrchestrator, player_id: str | None, viewer_mode: str) -> list[dict[str, Any]]:
+    if not orchestrator:
+        return []
+    history = orchestrator.state.chat_history
+    if viewer_mode == "storyteller":
+        # 说书人可以看到所有聊天记录
+        return [m.model_dump() for m in history]
+    
+    # 获取玩家对象以便检查阵营
+    player = orchestrator.state.get_player(player_id) if player_id else None
+    team = (player.current_team or player.team) if player else None
+    
+    filtered = []
+    for m in history:
+        visible = False
+        # 消息本身不带 visibility 字段，通过 recipient_ids 判定
+        if not m.recipient_ids:
+            # 公开消息
+            visible = True
+        elif player_id in (m.speaker, m.target) or (m.recipient_ids and player_id in m.recipient_ids):
+            # 涉及自己的私聊
+            visible = True
+        elif team == Team.EVIL and m.recipient_ids:
+            # 邪恶阵营频道 (通过 recipient_ids 判定)
+            evil_ids = [p.player_id for p in orchestrator.state.players if (p.current_team or p.team) == Team.EVIL]
+            if all(eid in m.recipient_ids for eid in evil_ids):
+                visible = True
+                
+        if visible:
+            filtered.append(m.model_dump())
+    return filtered
+
+def filter_event_log(orchestrator: GameOrchestrator, player_id: str | None, viewer_mode: str) -> list[dict[str, Any]]:
+    if not orchestrator:
+        return []
+    events = orchestrator.state.event_log
+    
+    if viewer_mode == "storyteller":
+        # 说书人可以看到所有事件
+        return [e.model_dump(mode="json") for e in events]
+    
+    # 获取玩家对象以便检查阵营
+    player = orchestrator.state.get_player(player_id) if player_id else None
+    team = (player.current_team or player.team) if player else None
+    
+    filtered = []
+    for e in events:
+        visible = False
+        if e.visibility == Visibility.PUBLIC:
+            visible = True
+        elif e.visibility == Visibility.PRIVATE:
+            # 自己发出的或发给自己的私有事件
+            if e.actor == player_id or e.target == player_id:
+                visible = True
+        elif e.visibility == Visibility.TEAM_EVIL and team == Team.EVIL:
+            visible = True
+        elif e.visibility == Visibility.TEAM_GOOD and team == Team.GOOD:
+            visible = True
+            
+        if visible:
+            filtered.append(e.model_dump(mode="json"))
+    return filtered
 
 
 def can_view_grimoire(orchestrator: GameOrchestrator, player_id: str | None) -> bool:
@@ -438,6 +519,7 @@ async def setup_game(data: Dict[str, Any]):
     human_mode = data.get("human_mode", "player")
     human_client_id = data.get("human_client_id") or host_id
     storyteller_client_id = data.get("storyteller_client_id") or (human_client_id if human_mode == "storyteller" else None)
+    storyteller_delegated = bool(data.get("storyteller_delegated", False))
     is_human = human_mode == "player"
     discussion_rounds = data.get("discussion_rounds")
     audit_mode = bool(data.get("audit_mode", False))
@@ -447,6 +529,7 @@ async def setup_game(data: Dict[str, Any]):
         return {"status": "error", "message": "Player count must be between 5 and 15"}
 
     try:
+        logger.info("[setup_game] Calling run_setup_with_options")
         await global_orchestrator.run_setup_with_options(
             player_count=player_count,
             host_id=host_id,
@@ -458,6 +541,7 @@ async def setup_game(data: Dict[str, Any]):
             human_mode=human_mode,
             human_client_id=human_client_id,
             storyteller_client_id=storyteller_client_id,
+            storyteller_delegated=storyteller_delegated,
         )
     except RuntimeError as exc:
         return {"status": "error", "message": str(exc)}
@@ -471,9 +555,11 @@ async def setup_game(data: Dict[str, Any]):
 
 @app.post("/api/game/start")
 async def start_game():
+    logger.info("[start_game] Received start request")
     if not global_orchestrator:
         return {"status": "error", "message": "Orchestrator not initialized"}
     started = ensure_game_loop_running()
+    logger.info(f"[start_game] ensure_game_loop_running returned: {started}")
     return {
         "status": "ok",
         "message": "Game loop started" if started else "Game loop already running",
@@ -512,6 +598,16 @@ async def get_roles():
             })
     return {"roles": roles_info}
 
+
+@app.get("/api/game/night-order")
+async def get_night_order_rulebook():
+    """玩家规则书使用的 Trouble Brewing 夜晚顺序。"""
+    return {
+        "script_id": "trouble_brewing",
+        "tie_strategy": "同顺位角色按规则书顺序处理；若仍同角色则按座位顺序处理。",
+        "entries": export_rulebook_night_order(),
+    }
+
 @app.get("/api/game/state")
 async def get_game_state(player_id: str = None):
     if not global_orchestrator:
@@ -539,7 +635,9 @@ async def get_game_state(player_id: str = None):
         "is_observer": is_observer,
         "can_view_grimoire": can_view_grimoire(orchestrator, player_id),
         "nomination_state": build_nomination_state(orchestrator),
-        "private_info": build_private_info_list(orchestrator, player_id) if viewer_mode == "player" else [],
+        "private_info": build_private_info_list(orchestrator, player_id),
+        "chat_history": filter_chat_history(orchestrator, player_id, viewer_mode),
+        "event_log": filter_event_log(orchestrator, player_id, viewer_mode),
         "active_action_request": None,
         "players": []
     }
@@ -549,56 +647,66 @@ async def get_game_state(player_id: str = None):
         if orchestrator._pending_night_action.get("player_id") == player_id:
             data["active_action_request"] = orchestrator._pending_night_action
 
-    # 按照座位顺序返回玩家列表
-    ordered_ids = state.seat_order if state.seat_order else [p.player_id for p in state.players]
+    # 收集玩家信息，优先按座位顺序，未排座位的放最后
+    players_data = []
+    seat_order = state.seat_order or []
     player_map = {p.player_id: p for p in state.players}
     
-    for pid in ordered_ids:
+    # 先按座位顺序添加
+    seen_ids = set()
+    for pid in seat_order:
         p = player_map.get(pid)
-        if not p: continue
-        p_info = {
-            "player_id": p.player_id,
-            "name": p.name,
-            "is_alive": p.is_alive,
-        }
-        # 仅玩家本人看到自己的角色与私密状态
-        if viewer_mode == "player" and player_id == p.player_id:
-            # 如果是该玩家本人且有虚假身份(如酒鬼)，则返回虚假身份供其展示
-            display_role = p.perceived_role_id or p.fake_role or p.role_id
-                
-            p_info.update({
-                "role_id": display_role,
-                "team": (p.current_team or p.team).value,
-                "is_poisoned": p.is_poisoned,
-                "is_drunk": p.is_drunk,
-            })
-        
-        if viewer_mode == "storyteller":
-             p_info.update({
-                "true_role_id": p.true_role_id,
-                "perceived_role_id": p.perceived_role_id,
-                "fake_role": p.fake_role,
-                "team": (p.current_team or p.team).value,
-                "is_poisoned": p.is_poisoned,
-                "is_drunk": p.is_drunk,
-            })
-        
-        data["players"].append(p_info)
+        if p:
+            seen_ids.add(pid)
+            p_info = {
+                "player_id": p.player_id,
+                "name": p.name,
+                "is_alive": p.is_alive,
+            }
+            # 无论是玩家还是说书人，只要是查看自己的信息，就显示其角色
+            if player_id == p.player_id:
+                display_role = p.perceived_role_id or p.fake_role or p.role_id
+                p_info.update({
+                    "role_id": display_role,
+                    "team": (p.current_team or p.team).value,
+                    "is_poisoned": p.is_poisoned,
+                    "is_drunk": p.is_drunk,
+                })
+            players_data.append(p_info)
+            
+    # 再添加不在座位表中的玩家（通常在 SETUP 阶段）
+    for p in state.players:
+        if p.player_id not in seen_ids:
+            p_info = {
+                "player_id": p.player_id,
+                "name": p.name,
+                "is_alive": p.is_alive,
+            }
+            if player_id == p.player_id:
+                display_role = p.perceived_role_id or p.fake_role or p.role_id
+                p_info.update({
+                    "role_id": display_role,
+                    "team": (p.current_team or p.team).value,
+                })
+            players_data.append(p_info)
+            
+    data["players"] = players_data
     return data
 
 @app.get("/api/game/grimoire")
 async def get_grimoire(player_id: str | None = None, view: str = "full"):
-    """获取说书人专用魔典信息"""
+    """获取说书人专用魔典信息 (实时生成)"""
     if not global_orchestrator:
         return {"status": "error", "message": "Orchestrator not initialized"}
     if not can_view_grimoire(global_orchestrator, player_id):
         raise HTTPException(status_code=403, detail="只有说书人可以查看魔典")
     
-    grimoire = global_orchestrator.state.grimoire
-    if not grimoire:
-        return {"players": []}
-        
-    return grimoire.model_dump() if view == "full" else {"players": grimoire.players}
+    # 动态生成魔典，确保即使在 phase 切换中间也能看到最新状态
+    grimoire = global_orchestrator.get_grimoire_info()
+    
+    if view == "full":
+        return grimoire.model_dump()
+    return {"players": [p.model_dump() for p in grimoire.players]}
 
 @app.get("/api/game/metrics")
 async def get_game_metrics():
@@ -656,7 +764,10 @@ async def get_game_history_detail(game_id: str):
     from src.state.game_record import GameRecordStore
     store = GameRecordStore()
     try:
-        record = await store.get_game(game_id)
+        storyteller_agent = None
+        if global_orchestrator and global_orchestrator.state.game_id == game_id:
+            storyteller_agent = global_orchestrator.storyteller_agent
+        record = await store.export_history_detail(game_id, storyteller_agent=storyteller_agent)
         if not record:
             raise HTTPException(status_code=404, detail="Game not found")
         return {"status": "ok", **record}
@@ -664,6 +775,31 @@ async def get_game_history_detail(game_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to fetch game record: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/game/export/{game_id}")
+async def export_game_assets(game_id: str):
+    """[A3-DATA-4] 统一导出单局历史、AI traces 与说书人判决资产。"""
+    from src.state.game_record import GameRecordStore
+    from src.engine.data_collector import GameDataCollector
+
+    store = GameRecordStore()
+    try:
+        storyteller_agent = None
+        if global_orchestrator and global_orchestrator.state.game_id == game_id:
+            storyteller_agent = global_orchestrator.storyteller_agent
+
+        assets = await store.export_game_assets(game_id, storyteller_agent=storyteller_agent)
+        if not assets:
+            raise HTTPException(status_code=404, detail="Game not found")
+
+        assets["ai_traces"] = GameDataCollector.export_ai_traces(game_id)
+        return {"status": "ok", **assets}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to export game assets for {game_id}: {e}")
         return {"status": "error", "message": str(e)}
 
 
@@ -699,32 +835,19 @@ async def rematch_game():
     logger.info("Rematch requested: player_count=%d human_mode=%s", player_count, human_mode)
 
     # 停止旧循环
+    logger.info("[rematch_game] Starting rematch")
     await stop_game_loop_task()
-
-    # 重建 orchestrator
     global_orchestrator = build_fresh_orchestrator()
+    logger.info(f"[rematch_game] New orchestrator built: {global_orchestrator.state.game_id}")
 
-    # 使用旧配置重新 setup
-    try:
-        await global_orchestrator.run_setup_with_options(
-            player_count=player_count,
-            host_id=host_id,
-            human_mode=human_mode,
-            human_client_id=human_client_id,
-            storyteller_client_id=storyteller_client_id,
-            backend_mode=os.getenv("BOTC_BACKEND", "auto"),
-        )
-    except Exception as e:
-        logger.error(f"Rematch setup failed: {e}")
-        return {"status": "error", "message": str(e)}
-
-    # 重连已有的 human_agents
+    # 重连已有的 human_agents，确保他们在准备大厅依然在线
     for pid, agent in human_agents.items():
         if pid not in global_orchestrator.broker.agents:
             global_orchestrator.register_agent(agent)
 
-    # 启动新循环
-    ensure_game_loop_running()
+    # 不再自动执行 run_setup_with_options 和 ensure_game_loop_running
+    # 这样前端 fetchGameState 时 loop_running 为 false，会自动弹出准备界面（Lobby）
+
 
     new_game_id = global_orchestrator.state.game_id
 

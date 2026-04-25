@@ -26,8 +26,10 @@ def _check_balance_index(repo_root: Path) -> dict:
     payload = json.loads(index_path.read_text(encoding="utf-8"))
     summary = payload.get("aggregate_balance_summary", {})
     full_games = payload.get("full_games", [])
-    if payload.get("curated_node_count", 0) < 3:
+    if payload.get("curated_node_count", 0) < 5:
         raise SystemExit("storyteller balance acceptance failed: curated node coverage is too small")
+    if payload.get("full_game_node_count", 0) < 10:
+        raise SystemExit("storyteller balance acceptance failed: full-game node coverage is too small")
     if summary.get("night_info_judgement_count", 0) < 1:
         raise SystemExit("storyteller balance acceptance failed: missing night_info judgements")
     if summary.get("suppressed_info_count", 0) < 1:
@@ -40,6 +42,12 @@ def _check_balance_index(repo_root: Path) -> dict:
         raise SystemExit("storyteller balance acceptance failed: missing judgement category distribution")
     if "event_type_counts" not in summary or not summary["event_type_counts"]:
         raise SystemExit("storyteller balance acceptance failed: missing event type distribution")
+    if "judgement_bucket_counts" not in summary or not summary["judgement_bucket_counts"]:
+        raise SystemExit("storyteller balance acceptance failed: missing judgement bucket distribution")
+    if "adjudication_path_counts" not in summary or not summary["adjudication_path_counts"]:
+        raise SystemExit("storyteller balance acceptance failed: missing adjudication path distribution")
+    if "distortion_strategy_counts" not in summary or not summary["distortion_strategy_counts"]:
+        raise SystemExit("storyteller balance acceptance failed: missing distortion strategy distribution")
     if not full_games:
         raise SystemExit("storyteller balance acceptance failed: missing full game samples")
     if not any(item.get("source") == "mock_full_game" for item in full_games):
@@ -53,6 +61,10 @@ def _check_balance_index(repo_root: Path) -> dict:
         game_summary = game.get("aggregate_balance_summary", {})
         if game_summary.get("event_node_fallback_count", 999) > 0:
             raise SystemExit("storyteller balance acceptance failed: full-game nodes still rely on event-node fallback")
+        if not game_summary.get("judgement_bucket_counts"):
+            raise SystemExit("storyteller balance acceptance failed: per-game judgement bucket distribution is missing")
+        if game.get("source") == "mock_full_game" and game_summary.get("night_info_judgement_count", 0) < 1:
+            raise SystemExit("storyteller balance acceptance failed: mock full-game trace is missing real night_info judgement coverage")
         combined_categories.update((game_summary.get("judgement_category_counts") or {}).keys())
         combined_suppressed += int(game_summary.get("suppressed_info_count", 0))
         combined_distorted += int(game_summary.get("distorted_info_count", 0))
@@ -87,9 +99,9 @@ def main() -> int:
             "--full-games",
             "1",
             "--timeout-seconds",
-            "8",
+            "30",
             "--max-node-samples",
-            "16",
+            "32",
         ],
     )
     _run(

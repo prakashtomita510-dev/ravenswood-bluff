@@ -19,10 +19,14 @@ def test_storyteller_console_fetches_settlement_and_history_contracts():
     assert "async function loadSettlement()" in STORYTELLER_HTML
     assert "async function loadHistory()" in STORYTELLER_HTML
     assert "async function loadHistoryDetail(gameId)" in STORYTELLER_HTML
+    assert "const storytellerJudgements = record.storyteller_judgements || {}" in STORYTELLER_HTML
+    assert "storyteller_judgement_count:" in STORYTELLER_HTML
+    assert '"storyteller_judgements:"' in STORYTELLER_HTML
 
 
 def test_storyteller_console_requests_grimoire_with_storyteller_identity():
     assert 'id="storytellerPlayerId"' in STORYTELLER_HTML
-    assert "function appendPlayerId(path)" in STORYTELLER_HTML
-    assert 'fetchJson(appendPlayerId("/api/game/state"))' in STORYTELLER_HTML
-    assert 'fetchJson(appendPlayerId("/api/game/grimoire?view=full"))' in STORYTELLER_HTML
+    assert "function apiUrl(path)" in STORYTELLER_HTML
+    assert 'const url = apiUrl(path);' in STORYTELLER_HTML
+    assert 'fetchJson("/api/game/state")' in STORYTELLER_HTML
+    assert 'fetchJson("/api/game/grimoire?view=full")' in STORYTELLER_HTML

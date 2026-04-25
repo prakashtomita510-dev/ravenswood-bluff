@@ -66,6 +66,7 @@ class HumanAgent(BaseAgent):
             "context": {
                 "required_targets": legal_context.required_targets if legal_context else 1,
                 "can_target_self": legal_context.can_target_self if legal_context else False,
+                "can_slayer_shot": legal_context.can_slayer_shot if legal_context else False,
                 "reminder": reminder,
                 "retry_count": retry_count,
                 "last_error": last_error,

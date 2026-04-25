@@ -125,6 +125,34 @@ def test_social_graph():
     assert claim_signals["conflicts"] == 1
 
 
+def test_social_graph_freeze_thaw_and_claim_dedup():
+    sg = SocialGraph(my_player_id="p0")
+    sg.init_player("p1", "Alice")
+
+    # 漏洞修复：freeze/thaw 不应因 logger 未定义而抛错
+    sg.freeze_player("p1", "已确认死亡并归档")
+    assert sg.get_profile("p1").is_frozen is True
+    sg.thaw_player("p1", "出现新证据")
+    assert sg.get_profile("p1").is_frozen is False
+
+    # 最小一致性修补：同轮次同内容重复自报不应重复写入
+    sg.record_claim("p1", "fortune_teller", "self_claim", day_number=1, round_number=1, source_text="我跳占卜师")
+    sg.record_claim("p1", "fortune_teller", "self_claim", day_number=1, round_number=1, source_text="我跳占卜师")
+    assert len(sg.get_profile("p1").claim_history) == 1
+
+
+def test_social_graph_conflict_count_resets_after_denial():
+    sg = SocialGraph(my_player_id="p0")
+    sg.init_player("p1", "Alice")
+
+    sg.record_claim("p1", "fortune_teller", "self_claim", day_number=1, round_number=1)
+    sg.record_claim("p1", "fortune_teller", "denial", day_number=2, round_number=1)
+    sg.record_claim("p1", "fortune_teller", "self_claim", day_number=3, round_number=1)
+
+    # 否认会结束上一段声明链，后续重新自报同身份不应被额外算作改口冲突
+    assert sg.claim_conflict_count("p1") == 1
+
+
 def test_working_memory_private_info_has_priority_lane():
     wm = WorkingMemory()
     wm.remember_fact("Bob 公开跳了预言家")
@@ -165,3 +193,36 @@ def test_working_memory_clear_transient_preserves_all_memory_tiers():
     assert wm.get_objective_memory_summaries("death") == ["Alice 死亡，原因：execution"]
     assert wm.get_private_memory_summaries("undertaker_info") == ["送葬者信息: 今天被处决的玩家身份是：小恶魔。"]
     assert wm.get_public_memory_summaries("role_claim") == ["Charlie 公开跳身份为 预言家"]
+
+
+def test_working_memory_multi_day_archives_preserve_private_and_public_layers():
+    wm = WorkingMemory()
+
+    wm.remember_private_info("investigator_info", "调查员信息: Bob 和 Charlie 中有一名爪牙。", day_number=1, round_number=1)
+    wm.remember_public_info("role_claim", "Bob 公开跳身份为 洗衣妇", day_number=2, round_number=1)
+    wm.clear_transient()
+    wm.remember_public_info("public_fact", "Bob 明确否认自己是 洗衣妇", day_number=3, round_number=1)
+    wm.clear_transient()
+
+    context = wm.get_recent_context()
+    assert "你确认掌握的高可信私密信息" in context
+    assert "调查员信息: Bob 和 Charlie 中有一名爪牙。" in context
+    assert "公开场上的普通信息" in context
+    assert "Bob 公开跳身份为 洗衣妇" in context
+    assert "Bob 明确否认自己是 洗衣妇" in context
+
+
+def test_working_memory_tracks_failed_kill_targets_in_objective_lane():
+    wm = WorkingMemory()
+
+    wm.remember_objective_info(
+        "failed_kill_target",
+        "Bob 是高风险刀人失败目标：已连续失败 2 次（原因: protected）。",
+        day_number=2,
+        round_number=2,
+        source="night_kill_result",
+    )
+    wm.clear_transient()
+
+    summaries = wm.get_objective_memory_summaries("failed_kill_target")
+    assert summaries == ["Bob 是高风险刀人失败目标：已连续失败 2 次（原因: protected）。"]

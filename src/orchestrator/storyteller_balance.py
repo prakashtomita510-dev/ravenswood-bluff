@@ -77,6 +77,20 @@ _DAY_EVENT_CATEGORY_MAP = {
     "execution_resolved": {"execution"},
 }
 
+_FIXED_INFO_TYPES = {
+    "washerwoman_info",
+    "librarian_info",
+    "investigator_info",
+    "chef_info",
+    "empath_info",
+    "undertaker_info",
+}
+
+_STORYTELLER_INFO_TYPES = {
+    "fortune_teller_info",
+    "ravenkeeper_info",
+}
+
 
 def _phase_to_value(phase: GamePhase | str | None) -> str | None:
     if phase is None:
@@ -319,6 +333,41 @@ def _build_event_node_adjudication(event: GameEvent) -> dict[str, Any]:
     }
 
 
+def _normalize_private_info_judgement_for_event(
+    entry: dict[str, Any],
+    event: GameEvent,
+) -> dict[str, Any]:
+    if event.event_type != "private_info_delivered":
+        return entry
+    if entry.get("category") != "private_info":
+        return entry
+
+    info_type = str(entry.get("info_type") or (event.payload or {}).get("type") or "")
+    if not info_type.endswith("_info"):
+        return entry
+
+    normalized = dict(entry)
+    if info_type in _FIXED_INFO_TYPES:
+        scope = "fixed_info"
+        adjudication_path = "fixed_info.adjudicated"
+    elif info_type in _STORYTELLER_INFO_TYPES:
+        scope = "storyteller_info"
+        adjudication_path = "storyteller_info.adjudicated"
+    else:
+        scope = "storyteller_info"
+        adjudication_path = "adjudicated"
+
+    normalized["category"] = "night_info"
+    normalized.setdefault("decision", "deliver")
+    normalized.setdefault("player_id", event.target)
+    normalized.setdefault("target", event.target)
+    normalized.setdefault("source", "private_info_delivered")
+    normalized["scope"] = scope
+    normalized["bucket"] = f"night_info.{scope}"
+    normalized["adjudication_path"] = normalized.get("adjudication_path") or adjudication_path
+    return normalized
+
+
 def _match_recent_judgements_for_event(
     recent_judgements: list[dict[str, Any]],
     event: GameEvent,
@@ -328,7 +377,7 @@ def _match_recent_judgements_for_event(
             payload = event.payload or {}
             target = event.target
             info_type = payload.get("type")
-            return [
+            filtered = [
                 entry
                 for entry in entries
                 if entry.get("category") in {"night_info", "private_info"}
@@ -339,6 +388,7 @@ def _match_recent_judgements_for_event(
                 )
                 and (info_type is None or entry.get("info_type") == info_type)
             ]
+            return [_normalize_private_info_judgement_for_event(entry, event) for entry in filtered]
         mapped = _DAY_EVENT_CATEGORY_MAP.get(event.event_type)
         if mapped:
             return [entry for entry in entries if entry.get("category") in mapped]
@@ -414,6 +464,7 @@ def aggregate_storyteller_node_samples(
         "adjudication_path_counts": {},
         "phase_counts": {},
         "event_type_counts": {},
+        "night_info_delivers": 0,
     }
     for sample in samples:
         if sample.balance_signals.ended_before_day_3:
@@ -456,6 +507,8 @@ def aggregate_storyteller_node_samples(
                 summary["night_info_judgement_count"] += 1
                 if entry.get("decision") == "suppressed":
                     summary["suppressed_info_count"] += 1
+                if entry.get("decision") == "deliver":
+                    summary["night_info_delivers"] += 1
                 distortion_strategy = entry.get("distortion_strategy")
                 if distortion_strategy not in {None, "", "none"}:
                     summary["distorted_info_count"] += 1
@@ -473,6 +526,13 @@ def aggregate_storyteller_node_samples(
                 summary["human_storyteller_step_count"] += 1
             if category == "event_node":
                 summary["event_node_fallback_count"] += 1
+    
+    # [A3-ST-3] 增加最低门槛统计计算
+    summary["fallback_rate"] = round(summary["legacy_fallback_count"] / (summary["judgement_entry_count"] or 1), 3)
+    summary["distortion_rate"] = round(summary["distorted_info_count"] / (summary["night_info_judgement_count"] or 1), 3)
+    # 覆盖率：产出的 night_info judgement 数量 / 实际交付私密信息的节点数量
+    summary["night_info_coverage"] = round(summary["night_info_judgement_count"] / (summary["private_info_delivery_node_count"] or 1), 3)
+    
     return summary
 
 

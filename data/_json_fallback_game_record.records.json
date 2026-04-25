@@ -2,8 +2,8 @@
   "games": {
     "fallback-game": {
       "game_id": "fallback-game",
-      "started_at": "2026-04-20T17:07:55.387212",
-      "ended_at": "2026-04-20T17:07:55.387212",
+      "started_at": "2026-04-22T21:32:41.054184",
+      "ended_at": "2026-04-22T21:32:41.054184",
       "winning_team": "good",
       "victory_reason": "demon_executed",
       "player_count": 2,

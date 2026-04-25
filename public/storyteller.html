@@ -284,6 +284,11 @@
         </div>
     </div>
 
+    <section class="card" style="margin-bottom: 16px; border-color: var(--accent); background: rgba(242, 169, 0, 0.05);">
+        <h2>说书人内心独白 (Storyteller's Mind) <span class="badge warn">STRATEGIC</span></h2>
+        <div id="storytellerThought" class="status-line" style="font-style: italic; color: #f2a900; font-size: 1.1rem; line-height: 1.5;">等待对局分析...</div>
+    </section>
+
     <div class="shell">
         <section class="card">
             <h2>全局状态 <span class="badge info" id="backendBadge">API</span></h2>
@@ -317,8 +322,17 @@
     <div style="height:16px"></div>
 
     <section class="card">
-        <h2>可观测摘要</h2>
-        <div id="eventsSummary" class="event-list"></div>
+        <h2>全局活动流水 (全量行动日志) <span class="badge info">ACTIVITY</span></h2>
+        <div id="activityLedger" class="event-list" style="max-height: 500px; overflow-y: auto;"></div>
+        <div class="status-line">展示所有夜晚行动（含具体目标）、白天提名及投票结果。按时间倒序排列。</div>
+    </section>
+
+    <div style="height:16px"></div>
+
+    <section class="card">
+        <h2>AI 说书人裁量记录 (Judgement Ledger)</h2>
+        <ul id="judgementList" class="event-list"></ul>
+        <div class="status-line">展示说书人对信息的裁量记录、逻辑推导及平衡性决策。</div>
     </section>
 
     <div style="height:16px"></div>
@@ -356,7 +370,9 @@
         };
 
         function apiUrl(path) {
-            return `${API_BASE}${path}`;
+            const separator = path.includes("?") ? "&" : "?";
+            const ts = Date.now();
+            return `${API_BASE}${path}${separator}player_id=${encodeURIComponent(getStorytellerPlayerId())}&_t=${ts}`;
         }
 
         function getStorytellerPlayerId() {
@@ -368,51 +384,29 @@
             localStorage.setItem(STORYTELLER_ID_STORAGE_KEY, getStorytellerPlayerId());
         }
 
-        function appendPlayerId(path) {
-            const separator = path.includes("?") ? "&" : "?";
-            return `${path}${separator}player_id=${encodeURIComponent(getStorytellerPlayerId())}`;
-        }
-
         async function fetchJson(path, options = {}) {
-            const res = await fetch(apiUrl(path), {
-                headers: { "Content-Type": "application/json" },
-                ...options,
-            });
-            return await res.json();
+            const url = apiUrl(path);
+            console.log(`Fetching: ${url}`); // Debug URL
+            try {
+                const res = await fetch(url, {
+                    headers: { "Content-Type": "application/json" },
+                    ...options,
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    console.error(`API Error (${res.status}):`, data);
+                    return { status: "error", message: data.detail || data.message || `HTTP Error ${res.status}` };
+                }
+                return data;
+            } catch (err) {
+                console.error("Network Error:", err);
+                return { status: "error", message: err.message };
+            }
         }
 
         function normalizePhase(value) {
             if (!value) return "-";
             return String(value).toUpperCase();
-        }
-
-        function renderMetricSummary(metrics) {
-            const box = document.getElementById("metricsSummary");
-            if (!metrics || Object.keys(metrics).length === 0) {
-                box.innerHTML = `<li class="row"><div><strong>暂无指标</strong><div><small>后端未返回 /api/game/metrics，已保留页面可用性。</small></div></div><span class="badge warn">placeholder</span></li>`;
-                return;
-            }
-
-            const items = [];
-            const pick = (keys, fallback = "-") => {
-                for (const key of keys) {
-                    if (metrics[key] !== undefined && metrics[key] !== null && metrics[key] !== "") return metrics[key];
-                }
-                return fallback;
-            };
-
-            items.push(["最近事件", pick(["recent_event", "latest_event", "last_event"])]);
-            items.push(["提名尝试", pick(["nomination_attempts", "nominate_attempts", "nominations_today"])]);
-            items.push(["合法提名", pick(["legal_nominations", "valid_nominations"])]);
-            items.push(["投票统计", pick(["vote_counts", "votes_today"])]);
-            items.push(["处决结果", pick(["execution_result", "latest_execution"])]);
-
-            box.innerHTML = items.map(([label, value]) => `
-                <li class="row">
-                    <div><strong>${label}</strong><div><small>${typeof value === "object" ? JSON.stringify(value) : value}</small></div></div>
-                    <span class="badge info">metric</span>
-                </li>
-            `).join("");
         }
 
         function renderStateSummary(state) {
@@ -443,6 +437,88 @@
             document.getElementById("metricRound").innerText = `${state.round_number ?? "-"} / ${state.day_number ?? "-"}`;
             document.getElementById("metricAlive").innerText = state.alive_count ?? "-";
             document.getElementById("stateStatus").innerText = `最后刷新：${new Date().toLocaleTimeString()}`;
+        }
+
+        function renderMetricSummary(metrics) {
+            const box = document.getElementById("metricsSummary");
+            if (!metrics || Object.keys(metrics).length === 0) {
+                box.innerHTML = `<li class="row"><div><strong>暂无指标</strong><div><small>后端未返回 /api/game/metrics，已保留页面可用性。</small></div></div><span class="badge warn">placeholder</span></li>`;
+                return;
+            }
+
+            const items = [];
+            const pick = (keys, fallback = "-") => {
+                for (const key of keys) {
+                    if (metrics[key] !== undefined && metrics[key] !== null && metrics[key] !== "") return metrics[key];
+                }
+                return fallback;
+            };
+
+            items.push(["最近事件", pick(["recent_event", "latest_event", "last_event"])]);
+            items.push(["提名尝试", pick(["nomination_attempts", "nominate_attempts", "nominations_today"])]);
+            items.push(["合法提名", pick(["legal_nominations", "valid_nominations"])]);
+            items.push(["投票统计", pick(["vote_counts", "votes_today"])]);
+            items.push(["处决结果", pick(["execution_result", "latest_execution"])]);
+
+            box.innerHTML = items.map(([label, value]) => `
+                <li class="row">
+                    <div><strong>${label}</strong><div><small>${typeof value === "object" ? JSON.stringify(value) : value}</small></div></div>
+                    <span class="badge info">metric</span>
+                </li>
+            `).join("");
+
+            // 刷新 Judgement Ledger
+            renderJudgementList(metrics?.judgements);
+
+            // 更新内心独白
+            const judgements = Array.isArray(metrics?.judgements) ? metrics.judgements : [];
+            const thoughts = judgements.filter(j => j.category === 'strategic_analysis');
+            const thoughtBox = document.getElementById('storytellerThought');
+
+            if (thoughts && thoughts.length > 0) {
+                const latest = thoughts[thoughts.length - 1];
+                thoughtBox.innerText = `“${latest.reason || latest.decision}”`;
+                thoughtBox.style.opacity = "1";
+            } else {
+                // 如果没有找到分析记录，尝试查看是否有 narration 记录
+                const narrations = judgements.filter(j => j.category === 'narration' || j.category === 'phase_narration' || j.category === 'narrate_phase');
+                if (narrations.length > 0) {
+                    const latest = narrations[narrations.length - 1];
+                    thoughtBox.innerText = `“报幕思维: ${latest.reason || latest.decision || latest.narration}”`;
+                    thoughtBox.style.opacity = "1";
+                } else if (metrics && metrics.storyteller_delegated === false && metrics.storyteller_mode !== 'auto') {
+                    thoughtBox.innerText = "当前处于【手动模式】，AI 说书人托管未开启。";
+                    thoughtBox.style.opacity = "0.7";
+                } else {
+                    thoughtBox.innerText = "正在等待局势分析日志生成 (可能需要几秒)...";
+                }
+            }
+        }
+
+        function renderJudgementList(judgements) {
+            const list = document.getElementById("judgementList");
+            if (!judgements || judgements.length === 0) {
+                list.innerHTML = `<li class="empty">当前尚无说书人裁量记录。</li>`;
+                return;
+            }
+
+            list.innerHTML = judgements.map(j => {
+                const badgeClass = j.bucket?.includes("night_info") ? "warn" : (j.bucket === "phase_narration" ? "info" : "");
+                return `
+                    <li class="row">
+                        <div>
+                            <strong>[${j.category}] ${j.decision}</strong>
+                            <div style="margin-top:4px"><small>${j.reason || "无具体理由"}</small></div>
+                            <div class="player-meta" style="margin-top:2px">
+                                <span>Phase: ${j.phase || "-"}</span> | 
+                                <span>Round: ${j.round_number || "-"}</span> |
+                                <span>Bucket: ${j.bucket || "-"}</span>
+                            </div>
+                        </div>
+                        <span class="badge ${badgeClass}">${j.bucket?.split('.')[0] || "judgement"}</span>
+                    </li>
+                `;
+            }).reverse().join(""); // 最新的排在前面
         }
 
         function renderGrimoire(grimoire) {
@@ -483,38 +559,79 @@
             }).join("") || `<li class="empty">当前没有可展示的魔典玩家。</li>`;
         }
 
-        function renderEventsSummary(state, metrics, grimoire) {
-            const box = document.getElementById("eventsSummary");
-            const stateEvents = state?.event_log ? state.event_log.slice(-3) : [];
-            const metricSummary = metrics ? Object.entries(metrics).slice(0, 4) : [];
-            const grimoireCount = grimoire?.night_actions?.length ?? 0;
+        function renderActivityLedger(state, grimoire) {
+            const box = document.getElementById("activityLedger");
+            if (!state || !state.event_log) {
+                box.innerHTML = `<div class="empty">暂无活动记录。</div>`;
+                return;
+            }
 
-            const items = [];
-            items.push({
-                label: "最近状态",
-                value: stateEvents.length ? `最后 ${stateEvents.length} 条事件已载入` : "state 暂无事件摘要",
-                badge: "state"
-            });
-            items.push({
-                label: "指标摘要",
-                value: metricSummary.length ? metricSummary.map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(" | ") : "metrics 暂未返回",
-                badge: "metric"
-            });
-            items.push({
-                label: "魔典记录",
-                value: `night_actions: ${grimoireCount}`,
-                badge: "grimoire"
-            });
+            const players = Array.isArray(grimoire?.players) ? grimoire.players : [];
+            const getPlayerName = (id) => players.find(p => p.player_id === id)?.name || id;
 
-            box.innerHTML = items.map(item => `
-                <div class="row">
-                    <div>
-                        <strong>${item.label}</strong>
-                        <div><small>${item.value}</small></div>
+            const filteredTypes = [
+                "night_action_resolved", "nomination_started", "vote_cast", 
+                "execution_resolved", "player_died", "phase_changed",
+                "nomination_window_opened", "voting_resolved", "game_settlement"
+            ];
+            const events = state.event_log.filter(e => filteredTypes.includes(e.event_type));
+
+            if (events.length === 0) {
+                box.innerHTML = `<div class="empty">暂无关键活动记录。</div>`;
+                return;
+            }
+
+            box.innerHTML = events.slice().reverse().map(e => {
+                let detail = "";
+                let badgeClass = "info";
+                const actorName = getPlayerName(e.actor);
+                
+                if (e.event_type === "night_action_resolved") {
+                    const targets = (e.payload.targets || [e.target] || []).filter(Boolean).map(t => getPlayerName(t));
+                    detail = `执行能力 [${e.payload.role_id || 'unknown'}]，目标: ${targets.join(", ")}`;
+                    badgeClass = "warn";
+                } else if (e.event_type === "nomination_started") {
+                    detail = `${actorName} 提名了 ${getPlayerName(e.target)}`;
+                    badgeClass = "evil";
+                } else if (e.event_type === "nomination_window_opened") {
+                    detail = `提名阶段开启 (第 ${e.payload.round || 1} 轮)`;
+                    badgeClass = "info";
+                } else if (e.event_type === "vote_cast") {
+                    detail = `${actorName} 投了 ${e.payload.decision ? '<span style="color:var(--good)">赞成</span>' : '<span style="color:var(--evil)">反对</span>'} 票`;
+                } else if (e.event_type === "execution_resolved") {
+                    detail = `处决结算: ${e.target ? getPlayerName(e.target) : '无人'} 被处决`;
+                    badgeClass = "evil";
+                } else if (e.event_type === "player_died") {
+                    detail = `${getPlayerName(e.target)} 死亡 (原因: ${e.payload.reason || '未知'})`;
+                    badgeClass = "evil";
+                } else if (e.event_type === "phase_changed") {
+                    detail = `【 阶段切换: ${e.phase} 】`;
+                } else if (e.event_type === "voting_resolved") {
+                    detail = `投票结束: 赞成 <span style="color:var(--good)">${e.payload.votes ?? 0}</span>, 需求 ${e.payload.needed ?? 0}`;
+                } else if (e.event_type === "game_settlement") {
+                    const winner = e.payload.winning_team === "good" ? "正义阵营" : "邪恶阵营";
+                    detail = `🎉 游戏结束，${winner} 获胜！<br/><small style="opacity:0.8">${e.payload.summary || ''}</small>`;
+                    badgeClass = e.payload.winning_team === "good" ? "good" : "evil";
+                } else {
+                    detail = e.payload.summary || (e.payload && Object.keys(e.payload).length ? JSON.stringify(e.payload) : "无额外数据");
+                }
+
+                return `
+                    <div class="row">
+                        <div>
+                            <strong style="color:var(--accent)">${e.event_type}</strong>
+                            <div style="margin-top:4px; font-size: 0.95rem;">${detail}</div>
+                            <div class="player-meta" style="margin-top:6px; font-size: 0.75rem; opacity: 0.6;">
+                                <span class="phase-label">${e.phase}</span> | 
+                                <span>Day ${e.day_number || e.payload.day_number || '-'}</span> | 
+                                <span>Round ${e.round_number}</span> |
+                                <span>Time: ${new Date(e.timestamp).toLocaleTimeString()}</span>
+                            </div>
+                        </div>
+                        <span class="badge ${badgeClass}">${e.event_type.split('_')[0]}</span>
                     </div>
-                    <span class="badge info">${item.badge}</span>
-                </div>
-            `).join("");
+                `;
+            }).join("");
         }
 
         function renderSettlement(settlement) {
@@ -563,6 +680,8 @@
             const settlement = record.settlement || {};
             const players = Array.isArray(record.players) ? record.players : [];
             const timeline = Array.isArray(settlement.timeline) ? settlement.timeline : [];
+            const storytellerJudgements = record.storyteller_judgements || {};
+            const recentSummary = Array.isArray(storytellerJudgements.recent_summary) ? storytellerJudgements.recent_summary : [];
             const lines = [
                 `game_id: ${record.game_id ?? "-"}`,
                 `winning_team: ${record.winning_team ?? settlement.winning_team ?? "-"}`,
@@ -571,10 +690,23 @@
                 `ended_at: ${record.ended_at ?? "-"}`,
                 `players: ${players.length}`,
                 `timeline_items: ${timeline.length}`,
+                `storyteller_judgement_count: ${storytellerJudgements.judgement_count ?? 0}`,
                 "",
                 "players:",
                 ...players.map((p) => `- ${p.player_name ?? p.name ?? p.player_id}: ${p.true_role_id ?? p.role_id} (${p.team})`),
             ];
+            if (recentSummary.length) {
+                lines.push("", "storyteller_judgements:");
+                lines.push(
+                    ...recentSummary.map((entry) => {
+                        const heading = [entry.category, entry.bucket].filter(Boolean).join(" / ") || "judgement";
+                        const meta = [entry.phase, entry.day_number ? `D${entry.day_number}` : "", entry.round_number ? `R${entry.round_number}` : ""]
+                            .filter(Boolean)
+                            .join(" · ");
+                        return `- ${heading}${meta ? ` (${meta})` : ""}: ${entry.decision ?? entry.summary ?? "-"} | ${entry.reason ?? entry.summary ?? "-"}`;
+                    })
+                );
+            }
             box.innerText = lines.join("\n");
         }
 
@@ -618,9 +750,9 @@
             try {
                 persistStorytellerId();
                 const [state, metrics, grimoire] = await Promise.all([
-                    fetchJson(appendPlayerId("/api/game/state")),
+                    fetchJson("/api/game/state"),
                     fetchJson("/api/game/metrics").catch(() => null),
-                    fetchJson(appendPlayerId("/api/game/grimoire?view=full")).catch(async (error) => {
+                    fetchJson("/api/game/grimoire?view=full").catch(async (error) => {
                         return { status: "error", message: `魔典加载失败：${error.message}` };
                     }),
                 ]);
@@ -632,7 +764,7 @@
                 renderStateSummary(state);
                 renderMetricSummary(metrics);
                 renderGrimoire(grimoire);
-                renderEventsSummary(state, metrics, grimoire);
+                renderActivityLedger(state, grimoire);
                 if (String(state?.phase || "").toLowerCase() === "game_over") {
                     await loadSettlement();
                 } else {

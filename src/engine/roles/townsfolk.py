@@ -10,7 +10,7 @@ import logging
 import random
 from typing import Any, Optional
 
-from src.engine.roles.base_role import BaseRole, register_role
+from src.engine.roles.base_role import BaseRole, register_role, get_role_class, get_all_role_ids
 
 
 logger = logging.getLogger(__name__)
@@ -101,8 +101,10 @@ class WasherwomanRole(BaseRole):
         
         info = {
             "type": "washerwoman_info",
+            "title": "洗衣妇信息",
             "players": pair,
-            "role_seen": target_role_id
+            "role_seen": target_role_id,
+            "lines": [f"玩家 {', '.join([game_state.get_player(p).name for p in pair])} 中有一位是 {get_role_class(target_role_id).get_definition().name}"]
         }
         # 注意：在这里无法直接修改 game_state (只读视图)，持久化逻辑通常应在 Orchestrator 产生的 execute_ability 中
         return info
@@ -119,7 +121,6 @@ class WasherwomanRole(BaseRole):
         return game_state, []
 
     def _is_townsfolk_role(self, game_state: GameState, player: PlayerState) -> bool:
-        from src.engine.roles.base_role import get_role_class
         role_id = player.true_role_id or player.role_id
         cls = get_role_class(role_id)
         if not cls: return False
@@ -193,7 +194,6 @@ class EmpathRole(BaseRole):
 
         def _is_evil(player_state: Any) -> bool:
             if not player_state: return False
-            from src.engine.roles.base_role import get_role_class
             role_cls = get_role_class(player_state.true_role_id or player_state.role_id)
             if role_cls:
                 role_instance = role_cls()
@@ -252,12 +252,6 @@ class UndertakerRole(BaseRole):
         return game_state, []
 
     def build_storyteller_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
-        if actor.ability_suppressed:
-            # 中毒/醉酒时给一个随机身份
-            from src.engine.roles.base_role import get_all_role_ids
-            fake = random.choice(get_all_role_ids())
-            return {"type": "undertaker_info", "role_seen": fake}
-            
         # 只查找“今天白天”被处决的人，不能错误读取更早轮次的旧处决结果。
         target_role = None
         target_player_id = None
@@ -278,10 +272,22 @@ class UndertakerRole(BaseRole):
             
         # 允许说书人通过 payload 覆盖 (处理中毒/醉酒的假信息)
         key = f"undertaker_override:{game_state.round_number}"
+        role_seen = target_role
         if key in game_state.payload:
-            return {"type": "undertaker_info", "role_seen": game_state.payload[key], "player_id": target_player_id}
+            role_seen = game_state.payload[key]
 
-        return {"type": "undertaker_info", "role_seen": target_role, "player_id": target_player_id}
+        if actor.ability_suppressed:
+            # 中毒/醉酒时给一个随机身份
+            role_seen = random.choice(get_all_role_ids())
+
+        role_name = get_role_class(role_seen).get_definition().name if get_role_class(role_seen) else role_seen
+        return {
+            "type": "undertaker_info", 
+            "title": "送葬者信息",
+            "role_seen": role_seen, 
+            "player_id": target_player_id,
+            "lines": [f"今天被处决的 {game_state.get_player(target_player_id).name} 的身份是 {role_name}"]
+        }
 
     def get_night_info(self, game_state: GameState, actor: PlayerState) -> Optional[dict]:
         return self.build_storyteller_info(game_state, actor)
@@ -323,7 +329,6 @@ class ChefRole(BaseRole):
 
         def _is_evil(player_state: Any) -> bool:
             if not player_state: return False
-            from src.engine.roles.base_role import get_role_class
             role_cls = get_role_class(player_state.true_role_id or player_state.role_id)
             if role_cls:
                 role_instance = role_cls()
@@ -341,7 +346,12 @@ class ChefRole(BaseRole):
         
         # 如果中毒/醉酒或手动操作，计算出的 truth 仅作为参考，实际应由说书人决定
         # 在我们的架构中，StorytellerAgent 会在 SETUP 阶段调用此函数生成初始建议，并将其存入 payload
-        info = {"type": "chef_info", "pairs": pairs}
+        info = {
+            "type": "chef_info", 
+            "title": "厨师信息",
+            "pairs": pairs,
+            "lines": [f"邪恶阵营邻座对数为: {pairs}"]
+        }
         
         if actor.ability_suppressed:
             # 中毒/醉酒：说书人可以给任何数字。
@@ -400,11 +410,23 @@ class LibrarianRole(BaseRole):
 
         outsiders = [p for p in game_state.players if p.player_id != actor.player_id and self._is_outsider_role(game_state, p)]
         if not outsiders:
-            info = {"type": "librarian_info", "has_outsider": False}
+            info = {
+                "type": "librarian_info", 
+                "title": "图书馆员信息",
+                "has_outsider": False,
+                "lines": ["本局游戏中没有外来者"]
+            }
         else:
             target_p = random.choice(outsiders)
             pair = _pick_decoy_pair(game_state, actor.player_id, target_p.player_id)
-            info = {"type": "librarian_info", "has_outsider": True, "players": pair, "role_seen": target_p.true_role_id or target_p.role_id}
+            info = {
+                "type": "librarian_info", 
+                "title": "图书馆员信息",
+                "has_outsider": True, 
+                "players": pair, 
+                "role_seen": target_p.true_role_id or target_p.role_id,
+                "lines": [f"玩家 {', '.join([game_state.get_player(p).name for p in pair])} 中有一位是 {get_role_class(target_p.true_role_id or target_p.role_id).get_definition().name}"]
+            }
         
         return info
 
@@ -419,7 +441,6 @@ class LibrarianRole(BaseRole):
         return game_state, []
 
     def _is_outsider_role(self, game_state: GameState, player: PlayerState):
-        from src.engine.roles.base_role import get_role_class
         role_id = player.true_role_id or player.role_id
         cls = get_role_class(role_id)
         if not cls: return False
@@ -469,7 +490,13 @@ class InvestigatorRole(BaseRole):
         
         target_p = random.choice(minions)
         pair = _pick_decoy_pair(game_state, actor.player_id, target_p.player_id)
-        info = {"type": "investigator_info", "players": pair, "role_seen": target_p.true_role_id or target_p.role_id}
+        info = {
+            "type": "investigator_info", 
+            "title": "调查员信息",
+            "players": pair, 
+            "role_seen": target_p.true_role_id or target_p.role_id,
+            "lines": [f"玩家 {', '.join([game_state.get_player(p).name for p in pair])} 中有一位是 {get_role_class(target_p.true_role_id or target_p.role_id).get_definition().name}"]
+        }
         return info
 
     def execute_ability(self, game_state, actor, target=None, **kwargs):
@@ -483,7 +510,6 @@ class InvestigatorRole(BaseRole):
         return game_state, []
 
     def _is_minion_role(self, game_state: GameState, player: PlayerState):
-        from src.engine.roles.base_role import get_role_class
         role_id = player.true_role_id or player.role_id
         cls = get_role_class(role_id)
         if not cls: return False
@@ -497,7 +523,7 @@ class InvestigatorRole(BaseRole):
 
 @register_role("fortune_teller")
 class FortuneTellerRole(BaseRole):
-    """预言家: 每晚选择两位玩家，得知其中是否有恶魔。此外还会有一位好人玩家被当作恶魔对待"""
+    """占卜师: 每晚选择两位玩家，得知其中是否有恶魔。此外还会有一位好人玩家被当作恶魔对待"""
 
     storyteller_info_role = True
     requires_night_target = True
@@ -506,7 +532,7 @@ class FortuneTellerRole(BaseRole):
     def get_definition() -> RoleDefinition:
         return RoleDefinition(
             role_id="fortune_teller",
-            name="预言家",
+            name="占卜师",
             name_en="Fortune Teller",
             team=Team.GOOD,
             role_type=RoleType.TOWNSFOLK,
@@ -519,7 +545,11 @@ class FortuneTellerRole(BaseRole):
         )
 
     def get_required_targets(self, game_state: GameState, phase: GamePhase) -> int:
-        return 2
+        # 预言家仅在夜晚需要选择两名玩家进行查验
+        if phase in (GamePhase.FIRST_NIGHT, GamePhase.NIGHT):
+            return 2
+        # 在白天（如提名阶段），回归正常的一个目标要求
+        return super().get_required_targets(game_state, phase)
 
     def can_target_self(self) -> bool:
         return True
@@ -598,7 +628,6 @@ class FortuneTellerRole(BaseRole):
             if not target_p: continue
             
             # 检查是否表现为恶魔 (含红鲱鱼逻辑)
-            from src.engine.roles.base_role import get_role_class
             cls = get_role_class(target_p.true_role_id or target_p.role_id)
             if cls:
                 role_instance = cls()
@@ -712,7 +741,7 @@ class VirginRole(BaseRole):
     def get_definition() -> RoleDefinition:
         return RoleDefinition(
             role_id="virgin",
-            name="圣女",
+            name="贞洁者",
             name_en="Virgin",
             team=Team.GOOD,
             role_type=RoleType.TOWNSFOLK,
@@ -731,7 +760,7 @@ class VirginRole(BaseRole):
 
 @register_role("slayer")
 class SlayerRole(BaseRole):
-    """杀手: 每局游戏一次，在白天你可以公开选择一名玩家，如果是恶魔，该玩家死亡"""
+    """猎手: 每局游戏一次，在白天你可以公开选择一名玩家，如果是恶魔，该玩家死亡"""
 
     @classmethod
     def has_used_shot(cls, actor: PlayerState) -> bool:
@@ -754,7 +783,7 @@ class SlayerRole(BaseRole):
     def get_definition() -> RoleDefinition:
         return RoleDefinition(
             role_id="slayer",
-            name="杀手",
+            name="猎手",
             name_en="Slayer",
             team=Team.GOOD,
             role_type=RoleType.TOWNSFOLK,
@@ -775,7 +804,6 @@ class SlayerRole(BaseRole):
         if not target_p:
             return game_state, []
         
-        from src.engine.roles.base_role import get_role_class
         cls = get_role_class(target_p.true_role_id or target_p.role_id)
         is_demon = cls and cls.get_definition().role_type == RoleType.DEMON
         
@@ -869,7 +897,7 @@ class MayorRole(BaseRole):
     def get_definition() -> RoleDefinition:
         return RoleDefinition(
             role_id="mayor",
-            name="市长",
+            name="镇长",
             name_en="Mayor",
             team=Team.GOOD,
             role_type=RoleType.TOWNSFOLK,

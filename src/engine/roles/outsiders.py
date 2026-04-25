@@ -126,7 +126,7 @@ class DrunkenRole(BaseRole):
 
 @register_role("recluse")
 class RecluseRole(BaseRole):
-    """隐士: 你可能被当作邪恶阵营、爪牙或恶魔"""
+    """陌客: 你可能被当作邪恶阵营、爪牙或恶魔"""
 
     fixed_info_role = False
 
@@ -134,7 +134,7 @@ class RecluseRole(BaseRole):
     def get_definition() -> RoleDefinition:
         return RoleDefinition(
             role_id="recluse",
-            name="隐士",
+            name="陌客",
             name_en="Recluse",
             team=Team.GOOD,
             role_type=RoleType.OUTSIDER,

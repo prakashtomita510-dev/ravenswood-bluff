@@ -236,7 +236,7 @@ def _record_daytime_resolution_judgements(
         threshold=threshold,
     )
     agent.record_judgement(
-        "voting",
+        "voting_resolution",
         decision="resolve",
         phase=GamePhase.VOTING.value,
         round_number=round_number,
