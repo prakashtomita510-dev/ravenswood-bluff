@@ -28,7 +28,8 @@ python scripts/check_doc_health.py           # 文档 frontmatter + 链接健康
 2. 读本文件（操作手册 + 硬约束 + 上下文预算）
 3. 读 `PROGRESS.md`（进度、活跃任务看板、未提交改动、blocker）
 4. 读 `DECISIONS.md`（已有决策，勿推翻）
-5. 按当前任务模块，读 `.codebuddy/rules/` 下对应规则
+5. 读 `docs/plans/pln044-long-term-roadmap.md`（PLN-044：当前里程碑与阶段任务板）
+6. 按当前任务模块，读 `.codebuddy/rules/` 下对应规则；**迭代执行流程按 `docs/plans/pln045-execution-handbook.md`（PLN-045）**
 
 ### 下班（缺一不可）
 1. 更新 `PROGRESS.md`（完成内容、仍存问题、下一步）
@@ -107,6 +108,8 @@ public/  data/
 
 ## 专题文档索引
 
+- `docs/plans/pln044-long-term-roadmap.md`(PLN-044) — **长期路线图**：当前里程碑方向 + 分阶段任务板（起步先看这里定阶段）
+- `docs/plans/pln045-execution-handbook.md`(PLN-045) — **迭代执行手册**：SOP-1~5 / 四层质量门禁 / 登记规范 / 陷阱速查 / 决策升级规则
 - `CLAUDE.md` — 深度 agent 指南（架构 / 约定 / gotchas / 常见任务）
 - `architecture.md` — 33KB 详细架构
 - `docs/plans/agent-native-redesign-plan.md`(PLN-037) + `docs/plans/token-budget-optimization-plan.md`(PLN-038) — 当前 Agent 重构计划；`docs/releases/alpha-1.2-agent-native-release.md` — 本版发布记录
