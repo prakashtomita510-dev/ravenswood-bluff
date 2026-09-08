@@ -19,6 +19,7 @@ author: "Ravenswood Bluff"
 |------|------|------|
 | 了解项目、如何运行与验证 | `README.md`(根) · `AGENTS.md`(根) | `architecture.md`(根) · `CLAUDE.md`(根) |
 | 看当前进度与待办 | `PROGRESS.md`(根) | `DECISIONS.md`(根) · `docs/plans/alpha-1.1-plan.md` |
+| 看长期规划 / 如何执行迭代 | `docs/plans/pln044-long-term-roadmap.md`(PLN-044) | `docs/plans/pln045-execution-handbook.md`(PLN-045) |
 | 查某角色能力 / 避坑 | `docs/reference/rule_matrix.md`(ARC-002) · `docs/reference/tech-traps.md`(REF-004) | — |
 | 跟进某版本计划 / 任务 | `docs/plans/alpha-1.1-plan.md`(PLN-003) 及其子目录 | `docs/alpha-1.1-evidence/`（验收证据） |
 | 部署 / 本地联机 | `docs/guides/cloud_deployment_guide.md`(REF-001) · `docs/guides/lan_play_guide.md`(REF-003) | — |
@@ -104,6 +105,9 @@ docs/
 | PLN-041 | [工作流与 RAG 融入计划（含可行性核查）](plans/血染钟楼_工作流与RAG融入计划_2026-08-12.md) | [Delta] | 2026-08-12 | `docs/plans/血染钟楼_工作流与RAG融入计划_2026-08-12.md` |
 | PLN-043 | [全动作声明式工作流：agent 决策统一工作流化](plans/pln043-all-action-workflow-plan.md) | [Delta] | 2026-08-14 | `docs/plans/pln043-all-action-workflow-plan.md` |
 | PLN-042 | [认知工作流：观点-证据层 + 人类式决策/发言工作流](plans/pln042-cognitive-workflow-plan.md) | [Delta] | 2026-08-13 | `docs/plans/pln042-cognitive-workflow-plan.md` |
+| PLN-044 | [项目长期路线图：从 Alpha 1.2 到 Beta 2.0（分阶段实现）](plans/pln044-long-term-roadmap.md) | [Delta] | 2026-09-08 | `docs/plans/pln044-long-term-roadmap.md` |
+| PLN-045 | [Agent 迭代执行手册：里程碑与任务的标准执行流程](plans/pln045-execution-handbook.md) | [Delta] | 2026-09-08 | `docs/plans/pln045-execution-handbook.md` |
+| PLN-046 | [Token 预算优化计划：缓存命中率提升 + 输出削减](plans/token-budget-optimization-plan.md) | [Delta] | 2026-08-03 | `docs/plans/token-budget-optimization-plan.md`（draft，与 PLN-039 主题相邻） |
 
 ### 审查 / 移交（Delta）
 
@@ -119,6 +123,10 @@ docs/
 | REV-008 | [PLN-039 缓存命中率优化 CR 审查报告（修复指引版）](reviews/pln039-cache-opt-cr-review-2026-08-04.md) | [Delta] | 2026-08-04 | `docs/reviews/pln039-cache-opt-cr-review-2026-08-04.md` |
 | REV-009 | [CR 与测试验收提示词：PLN-041/042 未提交改动](reviews/cr-prompt-pln041-042-2026-08-13.md) | [Delta] | 2026-08-13 | `docs/reviews/cr-prompt-pln041-042-2026-08-13.md` |
 | REV-010 | [CR 审查提示词：PLN-043 全动作声明式工作流](reviews/cr-prompt-pln043-2026-08-14.md) | [Delta] | 2026-08-14 | `docs/reviews/cr-prompt-pln043-2026-08-14.md` |
+| REV-011 | [live 验收与效果分析提示词：PLN-041/042/043 改进效果](reviews/live-analysis-prompt-pln041-043-2026-08-14.md) | [Delta] | 2026-08-14 | `docs/reviews/live-analysis-prompt-pln041-043-2026-08-14.md` |
+| REV-012 | [PLN-041/042 代码审查与测试验收报告（工作流 + RAG + 认知工作流）](reviews/cr-review-pln041-042-2026-08-13.md) | [Delta] | 2026-08-13 | `docs/reviews/cr-review-pln041-042-2026-08-13.md` |
+| REV-013 | [PLN-043 全动作声明式工作流 CR 审查 + 验收报告](reviews/cr-review-pln043-2026-08-14.md) | [Delta] | 2026-08-14 | `docs/reviews/cr-review-pln043-2026-08-14.md` |
+| REV-014 | [文档治理审计报告：docs 语料诊断 + PLN-044/045 合规审查](reviews/doc-governance-audit-2026-09-08.md) | [Delta] | 2026-09-08 | `docs/reviews/doc-governance-audit-2026-09-08.md` |
 
 ### 发布（Delta）
 
@@ -131,6 +139,7 @@ docs/
 | REL-005 | [Wave 4 Release Checklist](plans/alpha-0.2-plan/wave-4-release-checklist.md) | [Delta] | 2026-04-21 | `docs/plans/alpha-0.2-plan/wave-4-release-checklist.md` |
 | REL-006 | [M6 任务板：发布工程与内测包](plans/alpha-1.0-plan/task_m6_release_package.md) | [Delta] | 2026-04-29 | `docs/plans/alpha-1.0-plan/task_m6_release_package.md` |
 | REL-007 | [Alpha 1.2「觉醒之鸦」Agent 原生重构版发布记录](releases/alpha-1.2-agent-native-release.md) | [Delta] | 2026-08-04 | `docs/releases/alpha-1.2-agent-native-release.md` |
+| REL-008 | [AIAgent / StorytellerAgent / GameOrchestrator 上帝对象拆分计划](releases/v0.8/AGENTS_refactor.md) | [State] | 2026-07-31 | `docs/releases/v0.8/AGENTS_refactor.md`（内容属设计说明，role 保留 `[State]`） |
 | REL-009 | [Alpha 1.2「觉醒之鸦」Release Checklist](releases/alpha-1.2-release-checklist.md) | [Delta] | 2026-08-07 | `docs/releases/alpha-1.2-release-checklist.md` |
 
 ### 报告 / 分析（Delta）
@@ -156,6 +165,7 @@ docs/
 | RPT-017 | [PLN-041 工作流 + RAG 融入实施与验证报告](alpha-1.2-evidence/pln041-workflow-rag-report-2026-08-13.md) | [Delta] | 2026-08-13 | `docs/alpha-1.2-evidence/pln041-workflow-rag-report-2026-08-13.md` |
 | RPT-018 | [PLN-042 认知工作流实施与 live 实测报告](alpha-1.2-evidence/pln042-cognitive-workflow-report-2026-08-13.md) | [Delta] | 2026-08-13 | `docs/alpha-1.2-evidence/pln042-cognitive-workflow-report-2026-08-13.md` |
 | RPT-019 | [PLN-043 全动作声明式工作流实施与 live 实测报告](alpha-1.2-evidence/pln043-all-action-workflow-report-2026-08-14.md) | [Delta] | 2026-08-14 | `docs/alpha-1.2-evidence/pln043-all-action-workflow-report-2026-08-14.md` |
+| RPT-020 | [PLN-041/042/043 live 效果分析报告](alpha-1.2-evidence/pln041-043-live-effect-analysis-2026-08-14.md) | [Delta] | 2026-08-14 | `docs/alpha-1.2-evidence/pln041-043-live-effect-analysis-2026-08-14.md` |
 
 ### 参考 / 指南（Cold）
 

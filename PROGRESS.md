@@ -1,7 +1,7 @@
 # PROGRESS — 项目当前进度
 
-> 最后更新：2026-08-10
-> **上班必读**：本文件 + DECISIONS.md
+> 最后更新：2026-09-08
+> **上班必读**：本文件 + DECISIONS.md + `docs/plans/pln044-long-term-roadmap.md`（当前里程碑）
 
 ## 活跃任务看板（WIP 显式登记）
 
@@ -32,9 +32,12 @@
 | 21 | **PLN-040 T5 盲测验证**：`export_blind_test_samples.py`（export 导出匿名样本 + score 统计猜中率）+ 单测 | 实施 | 🟢 代码完成已推送（shuffle 防分组泄露 + TSV 换行清洗 + min-length 过滤 + 双匿名化，2026-08-10 commits `c8a8e24`/`def06af`/`7eaa277`）；**待真人标注**（≥3 人 × ≥30 次标注）后才能判 M3 | 真人标注后跑 score 判 M3 | 无 |
 | 22 | **PLN-040 T6 收尾验证**：全量回归 + mock 8 人局 + live 抽查 + 文档 published | 实施 | 🟢 已完成（2026-08-10：pytest 全绿 + ruff 0 + alpha1.1 9/9 + token 基准 PASS + doc health PASS + mock 8 人局 game_over + live 5 人局 day_1 fallback=0 发言自然差异化明显；PLN-040 status→published） | — | 无 |
 | 23 | **修复说书人档案 await bug**：`game_loop.py` 局末 `await` 同步方法 `finalize_game_profile`（dict 不可 await，TypeError 被吞，说书人档案从未经 game_loop 落盘；2026-08-04 PLN-038 阶段 E 引入） | 修复 | 🟡 已验证待提交（去掉 await 后 mock 8 人局说书人档案成功落盘 games_conducted=110，无 warning） | 提交（等待用户确认） | 无 |
-| 24 | **PLN-041 工作流 + RAG 融入**：检索基础设施（chunker/BM25/Faiss+RRF/持久化/统一管线）+ 规则知识库 setup 静态注入 + Workflow DSL/引擎/trace + 说书人裁决工作流试点 + 玩家行动轨迹（live 落盘）+ 检索质量 gate + 10/10 聚合 gate | 实施 | ✅ 已完成（2026-08-13，676 全量全绿 + ruff 0 + format 0 + doc health PASS + mock 8 人局 game_over + 检索 gate Recall@5=1.0/MRR=1.0；DECISIONS D016/D017 已登记） | 待用户确认后 commit | 无 |
-| 25 | **PLN-042 认知工作流**：观点-证据模型 + 认知工作流（recall→reason→speak→record）+ speak 试点开关 + 严格回归 + live 实测 | 实施 | ✅ 已完成（2026-08-13，692 快速单测全绿 + ruff 0 + format 0 + doc health PASS + mock 8 人局 game_over + **live 实测**：观点 5 玩家落盘、分级正确、fallback=0、A/B 论证式 vs 断言式；DECISIONS D018 + RPT-018） | 待用户确认后 commit | 无 |
-| 26 | **PLN-043 全动作声明式工作流**：act() 决策原语化（4 原语，行为零变更）+ 8 动作类型 Workflow（recall→decide→validate→record）+ BOTC_WORKFLOW_ACTIONS 开关 + 观点演化闭环（决策创建/更新观点）+ 严格回归 + live 实测 | 实施 | ✅ 已完成（2026-08-14，710 快速单测全绿 + ruff 0 + 10/10 gate + mock 开关 off 零 trace/on 26 trace + **live 实测**：52 trace 覆盖 4 动作、观点闭环 11 创建/6 更新、fallback=0；DECISIONS D019 + RPT-019） | 待用户确认后 commit | 无 |
+| 24 | **PLN-041 工作流 + RAG 融入**：检索基础设施（chunker/BM25/Faiss+RRF/持久化/统一管线）+ 规则知识库 setup 静态注入 + Workflow DSL/引擎/trace + 说书人裁决工作流试点 + 玩家行动轨迹（live 落盘）+ 检索质量 gate + 10/10 聚合 gate | 实施 | ✅ 已完成（2026-08-13，676 全量全绿 + ruff 0 + format 0 + doc health PASS + mock 8 人局 game_over + 检索 gate Recall@5=1.0/MRR=1.0；DECISIONS D016/D017 已登记） | —（已提交，见 git log） | 无 |
+| 25 | **PLN-042 认知工作流**：观点-证据模型 + 认知工作流（recall→reason→speak→record）+ speak 试点开关 + 严格回归 + live 实测 | 实施 | ✅ 已完成（2026-08-13，692 快速单测全绿 + ruff 0 + format 0 + doc health PASS + mock 8 人局 game_over + **live 实测**：观点 5 玩家落盘、分级正确、fallback=0、A/B 论证式 vs 断言式；DECISIONS D018 + RPT-018） | —（已提交，见 git log） | 无 |
+| 26 | **PLN-043 全动作声明式工作流**：act() 决策原语化（4 原语，行为零变更）+ 8 动作类型 Workflow（recall→decide→validate→record）+ BOTC_WORKFLOW_ACTIONS 开关 + 观点演化闭环（决策创建/更新观点）+ 严格回归 + live 实测 | 实施 | ✅ 已完成（2026-08-14，710 快速单测全绿 + ruff 0 + 10/10 gate + mock 开关 off 零 trace/on 26 trace + **live 实测**：52 trace 覆盖 4 动作、观点闭环 11 创建/6 更新、fallback=0；DECISIONS D019 + RPT-019） | —（已提交，见 git log） | 无 |
+| 27 | **长期路线图 + Agent 执行手册制定（PLN-044 / PLN-045）**：项目全景梳理（能力资产 / 遗留问题 12 项 / 短板与机会）+ 愿景与 6 项北极星指标 + 五里程碑分阶段计划（Alpha 1.2.x 淬火 / 1.3 深潜 / 1.4 新月 / 1.5 广场 / Beta 2.0 开门）+ 执行手册（启动链 / 9 条红线 / SOP-1~5 / 四层门禁 / 登记规范 / 陷阱速查 / 决策升级规则） | 规划 | ✅ 已完成并提交（2026-09-08；doc health PASSED） | 按 PLN-044 §5 启动 Alpha 1.2.x「淬火」（T1 文档清账 → T2 decide 超时 P1） | 无 |
+| 28 | **文档治理审计（doc-governance skill，REV-014）**：docs 全量 138 篇诊断（巨型单文件 / 幽灵文档 / role 一致性）+ PLN-044/045 合规修复（补 `tags`+`related` / TOC / 代码块语言标注 / 同目录相对链接）+ 幽灵文档与编号治理（`CR-PLN041-042`→REV-012、`CR-043`→REV-013、PLN-037 双占 → 新分配 PLN-046、补 REL-008）+ 代码一致性抽查（ToolCallNode 10s 与 PLN-044 T2 前提吻合） | 治理 | ✅ 已完成并提交（doc health PASSED 96 文件；REV-014 报告 + 5 条索引登记；临时脚本已清理） | — | 无 |
+| 29 | **文档治理检查常驻 CI**：`scripts/check_doc_health.py` 新增①**幽灵文档检测**（未被 `docs/README.md` 引用 → HARD failure，RC=1 阻断 CI）②**巨型单文件检测**（>500 行 → warning，`--strict` 升级为 failure）；docstring 与 PASSED 文案同步 | 工程 | ✅ 已完成待提交（验证：默认模式 PASSED/RC=0（4 warnings）· 植入幽灵探针 FAILED/RC=1 · `--strict` RC=1 · 探针删除后恢复 RC=0；`ruff check scripts` 0 告警） | 提交 + push（用户已授权） | 无 |
 
 ## 当前验证状态
 
@@ -93,6 +96,13 @@
 > **2026-08-04 提交完成**：本清单既有登记已按分组分 3 个 commit 全部提交（工作区 clean）。commit hash 以 `git log --oneline -3` 为准（2026-08-04 三组：token-opt-cache / 阶段 E / alpha1.2）。
 >
 > 既有登记项（`public/index.html` 修复、`m5l_live_speech_deepseek_20260803.md`、`.gitignore` 等）已在历史 commit 中入库，本清单无遗留。
+>
+> **2026-09-08 登记（当前未提交改动）**：
+> ① 上次会话 RPT-020 收尾：`docs/alpha-1.2-evidence/pln041-043-live-effect-analysis-2026-08-14.md`、
+> `docs/reviews/live-analysis-prompt-pln041-043-2026-08-14.md`、`data/blind_ready3/`、`.codebuddy/memory/2026-08-14.md`。
+> ② 本次会话规划产出：`docs/plans/pln044-long-term-roadmap.md`、`docs/plans/pln045-execution-handbook.md`、
+> `PROGRESS.md`、`docs/README.md`、`.codebuddy/memory/2026-09-08.md`。
+> 提交须用户确认（铁律）。**另**：PLN-041/042/043 主体代码已在 `1543cea`~`42714c1` 区间全部提交，任务 24/25/26 状态已同步。
 
 ## 整体进度
 
@@ -126,3 +136,6 @@
 | 2026-08-13 | **验收 flaky 根因修复（D017）**：6 项 slow 验收失败根因 = `persona_vote_bias` 只看随机 pick 的 decision_style 文案、与 archetype 无关 → vote 模糊带内 aggressive/silent 行为趋同（1.0<=1.0、persona_diversity 0.2）。修复：good 分支先按 `archetype.assertiveness`（high→yes/low→no）定倾向。**全量 676（含 slow）/0 failed** + ruff 0 + 10/10 gate + mock 8 人局 game_over | 676 全量全绿 + 10/10 gate PASS + mock 8 人局 game_over | 用户确认后 commit（含 PLN-041 全部改动） | 本文件 |
 | 2026-08-13 | **PLN-042 认知工作流全量完成**：观点-证据模型（hard/soft 分级 + 置信度门控）+ 认知工作流（recall→reason→speak→record）+ AIAgent act() 接入（开关默认 off）+ **live 实测**（DeepSeek 5 人局：观点 5 玩家落盘、fallback=0、A/B 论证式发言）；DECISIONS D018 + RPT-018 | 692 快速单测全绿 + ruff 0 + doc health PASS + mock 8 人局 game_over + live 五条验收全过 | 用户确认后 commit | 本文件 |
 | 2026-08-14 | **PLN-043 全动作声明式工作流全量完成**：act() 决策原语化（_decide_local_low_value/_decide_slayer_shot/_draft_reuse_decision/_decide_via_llm 四原语，696 零回归）+ 8 动作 Workflow（recall→decide→validate→record）+ 开关路由 + 观点演化闭环（record 创建/更新观点）；**live 实测**（DeepSeek 5 人局：52 trace 覆盖 4 动作、观点 11 创建/6 更新、fallback=0）；DECISIONS D019 + RPT-019 | 710 快速单测全绿 + ruff 0 + 10/10 gate + mock 双态验证 + live 六条验收全过 | 用户确认后 commit | 本文件 |
+| 2026-08-14 | **PLN-041/042/043 live 效果分析（RPT-020）**：两局 DeepSeek live 5 人完整局对照（基线 off `673cd086` vs 改进 on `7341fec5`）；PLN-043 观点演化闭环真实生效（26 观点、置信度 0.41→0.77 跨天递增、80/80 trace）；**P1 发现**：ToolCallNode 默认 10s 超时 < live LLM 延迟 → 4/80 decide 失败回退重试；P2：观点 day_number 不随演化更新、deepseek length 空响应致 fallback、机械复述发言 | 分析报告 RPT-020 + doc health PASS | P1 修复 decide 超时参数（待用户决定） | .codebuddy/memory/2026-08-14.md |
+| 2026-09-08 | **文档治理审计（REV-014，doc-governance skill）**：docs 138 篇诊断（巨型单文件 3 / 幽灵文档 4 / role 偏差 4）+ 编号治理（PLN-037 双占 → PLN-046；CR-* → REV-012/013；补 REL-008）+ PLN-044/045 合规修复（tags+related / TOC / 代码块语言 / 相对链接），评分 Agent 友好度 100、人类可读性 92、体系综合 89 | doc health PASSED（96 文件，1 历史 warning）；REV-014 + 4 条索引登记；临时脚本已清理 | 提交（等待用户确认）→ Alpha 1.2.x「淬火」T1/T2 | .codebuddy/memory/2026-09-08.md |
+| 2026-09-08 | **制定长期路线图（PLN-044）+ Agent 迭代执行手册（PLN-045）**：项目全景梳理（能力资产 7 类 / 遗留问题 12 项 / 短板与机会 / 6 项北极星指标）+ 五里程碑分阶段计划（1.2.x 淬火 T1-T9 / 1.3 深潜 T1-T8 / 1.4 新月 T1-T7 / 1.5 广场 T1-T5 / 2.0 开门 T1-T5）+ 执行手册（启动链 / 9 条红线 / SOP-1~5 / 四层门禁 L1-L4 / 文档登记规范 / 陷阱速查 / 决策升级规则） | PLN-044/045 落盘 + docs 索引登记；PROGRESS 任务板同步（24/25/26 已提交状态修正） | 用户确认提交 → 启动 Alpha 1.2.x「淬火」T1（文档清账）→ T2（decide 超时 P1） | .codebuddy/memory/2026-09-08.md |
