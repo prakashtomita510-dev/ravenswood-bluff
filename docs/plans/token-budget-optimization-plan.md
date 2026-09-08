@@ -1,5 +1,5 @@
 ---
-doc_id: "PLN-037"
+doc_id: "PLN-046"
 title: "Token 预算优化计划：缓存命中率提升 + 输出削减"
 category: "planning"
 role: "[Delta]"
