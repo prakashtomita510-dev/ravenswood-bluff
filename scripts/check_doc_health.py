@@ -10,6 +10,10 @@ directories / files explicitly EXEMPT:
   3. Internal links: dead relative links are HARD failures; absolute /
      non-portable link targets are WARNINGS (use ``--strict`` to fail on
      them too).
+  4. Index registration: documents not referenced anywhere in
+     ``docs/README.md`` ("ghost documents") are HARD failures.
+  5. Document size: files over ``MAX_DOC_LINES`` (500) lines are WARNINGS;
+     ``--strict`` escalates them to failures.
 
 Exits non-zero when any HARD violation is found, so it can gate CI.
 
@@ -44,6 +48,10 @@ VALID_STATUS = {"draft", "review", "published", "archived", "superseded"}
 # Directories (relative to docs root) whose contents are auto-generated
 # (e.g. acceptance evidence) and exempt from frontmatter governance.
 EXEMPT_DIRS = {"alpha-1.1-evidence"}
+
+# Governance thresholds (doc-governance anti-patterns).
+MAX_DOC_LINES = 500  # 巨型单文件: split or mark archived
+INDEX_NAME = "README.md"  # corpus index every doc must be registered in
 
 FRONTMATTER_RE = re.compile(r"^---\s*$")
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
@@ -128,6 +136,34 @@ def check_links(path: Path, violations: list[str], warnings: list[str], strict: 
             violations.append(f"{path}:{line_no} dead link -> {target}")
 
 
+def check_index_registration(
+    root: Path, path: Path, index_text: str, violations: list[str]
+) -> None:
+    """Ghost-document check: every doc must be referenced in the index."""
+    rel = path.relative_to(root).as_posix()
+    if rel == INDEX_NAME:
+        return
+    if rel not in index_text:
+        violations.append(f"{path}:1 ghost document - not registered in {INDEX_NAME} index")
+
+
+def check_doc_size(
+    path: Path, violations: list[str], warnings: list[str], strict: bool
+) -> None:
+    """Oversized-file check: > MAX_DOC_LINES lines is an anti-pattern."""
+    try:
+        lines = len(path.read_text(encoding="utf-8").splitlines())
+    except (UnicodeDecodeError, OSError):
+        return  # unreadable files are already reported elsewhere
+    if lines <= MAX_DOC_LINES:
+        return
+    msg = (
+        f"{path}:1 oversized document ({lines} lines > {MAX_DOC_LINES})"
+        " - split it or mark status: archived"
+    )
+    (violations if strict else warnings).append(msg)
+
+
 def iter_docs(root: Path):
     for dirpath, dirnames, filenames in os.walk(root):
         rel_dir = Path(dirpath).relative_to(root)
@@ -154,6 +190,16 @@ def main() -> int:
         print(f"ERROR: docs root not found: {root}", file=sys.stderr)
         return 2
 
+    index_path = root / INDEX_NAME
+    index_text = ""
+    if index_path.is_file():
+        try:
+            index_text = index_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            print(f"WARNING: cannot decode index {index_path}", file=sys.stderr)
+    else:
+        print(f"WARNING: index {index_path} not found - skipping ghost check", file=sys.stderr)
+
     violations: list[str] = []
     warnings: list[str] = []
     scanned = 0
@@ -161,10 +207,13 @@ def main() -> int:
         scanned += 1
         check_frontmatter(path, violations)
         check_links(path, violations, warnings, args.strict)
+        if index_text:
+            check_index_registration(root, path, index_text, violations)
+        check_doc_size(path, violations, warnings, args.strict)
 
     print(f"Scanned {scanned} markdown file(s) under {root}")
     if warnings:
-        print(f"\n{len(warnings)} warning(s) (non-portable links):")
+        print(f"\n{len(warnings)} warning(s) (non-portable links / oversized documents):")
         for w in warnings:
             print(f"  ! {w}")
     if violations:
@@ -173,7 +222,7 @@ def main() -> int:
             print(f"  - {v}")
         print("\nDoc health check FAILED.")
         return 1
-    print("Doc health check PASSED (frontmatter complete, links valid).")
+    print("Doc health check PASSED (frontmatter complete, links valid, index registered).")
     return 0
 
 
